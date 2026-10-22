@@ -25,7 +25,8 @@ export class CheckRateLimit {
    */
   async execute(request: CheckRateLimitRequest): Promise<Decision> {
     // The config snapshot is read once and used for the whole decision (HLD §6.1). A reconfigure
-    // landing between the read and consume is the accepted "one decision of staleness" (§6.4).
+    // landing between the read and consume is the accepted "one decision of staleness" (§6.4);
+    // the counter store ignores such an older snapshot when it would change the window.
     let decision: Decision | undefined;
     try {
       const config = await this.configs.get(request.clientId);

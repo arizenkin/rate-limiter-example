@@ -7,7 +7,7 @@ import { runLoad, seedClients } from './harness/load';
 import { spawnServer, type TargetServer } from './harness/server';
 import { summarizeMemory } from './lib/memory';
 import { diffMetrics } from './lib/metrics-diff';
-import { parseOptions, redactOptions, resolveApiKey, UsageError, USAGE } from './lib/options';
+import { parseOptions, redactOptions, resolveTarget, UsageError, USAGE } from './lib/options';
 import { evaluate, renderMarkdown, type BenchReport } from './lib/report';
 import { buildPlan, seedBodies } from './lib/requests';
 
@@ -20,8 +20,10 @@ async function main(): Promise<number> {
   // When spawning, the harness mints a throwaway admin key and gives the server only its hash.
   const pair = options.url === undefined ? createApiKeyPair(randomBytes(32)) : undefined;
   const spawned: TargetServer | undefined = pair && (await spawnServer(pair.hash));
-  const url = (options.url ?? spawned?.url) as string;
-  const apiKey = resolveApiKey(options, pair?.key);
+  const { url, apiKey } = resolveTarget(
+    options,
+    pair && spawned && { url: spawned.url, key: pair.key },
+  );
 
   try {
     console.log(`Seeding ${options.clients} client(s) on ${url} ...`);

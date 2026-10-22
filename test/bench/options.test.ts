@@ -1,4 +1,4 @@
-import { parseOptions, redactOptions, resolveApiKey, UsageError } from '../../bench/lib/options';
+import { parseOptions, redactOptions, resolveTarget, UsageError } from '../../bench/lib/options';
 
 describe('parseOptions', () => {
   it('defaults to latency mode with a fixed rate', () => {
@@ -98,9 +98,29 @@ describe('parseOptions', () => {
     });
   });
 
-  it('prefers the key minted for a spawned server over BENCH_API_KEY', () => {
+  it('targets the spawned server with its minted key, ignoring BENCH_API_KEY', () => {
     const options = parseOptions([], { BENCH_API_KEY: 'from-env' });
-    expect(resolveApiKey(options, 'minted')).toBe('minted');
-    expect(resolveApiKey(options, undefined)).toBe('from-env');
+    expect(resolveTarget(options, { url: 'http://spawned', key: 'minted' })).toEqual({
+      url: 'http://spawned',
+      apiKey: 'minted',
+    });
+  });
+
+  it('targets --url with BENCH_API_KEY when nothing was spawned', () => {
+    const options = parseOptions(['--url', 'http://remote'], { BENCH_API_KEY: 'from-env' });
+    expect(resolveTarget(options, undefined)).toEqual({
+      url: 'http://remote',
+      apiKey: 'from-env',
+    });
+  });
+
+  it.each([
+    ['no url', parseOptions([], { BENCH_API_KEY: 'k' })],
+    [
+      'no key',
+      { ...parseOptions(['--url', 'http://remote'], { BENCH_API_KEY: 'k' }), apiKey: undefined },
+    ],
+  ])('refuses to run without a complete target (%s)', (_name, options) => {
+    expect(() => resolveTarget(options, undefined)).toThrow(UsageError);
   });
 });

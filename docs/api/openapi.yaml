@@ -158,7 +158,17 @@ components:
       properties:
         client_id: { $ref: '#/components/schemas/ClientId' }
         window_seconds: { type: integer, minimum: 1, maximum: 300 }
-        request_per_window: { type: integer, minimum: 1, maximum: 500 }
+        request_per_window:
+          type: integer
+          minimum: 1
+          maximum: 500
+          description: >-
+            Requests allowed per window. The service uses a sliding-window counter, which never
+            admits more than this but is stricter than "N per window" at small values: under
+            sustained traffic it admits about N - 1 requests per window. With 1 that is roughly
+            one request every two windows (a window of 5 s admits at t = 0 and again at about
+            t = 10 s). A client starting from idle can still use the full N at once. See the
+            functional specification (section 5.1) for details.
     Error:
       type: object
       required: [error]

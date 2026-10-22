@@ -23,6 +23,7 @@ describe('newWindowState', () => {
       legacyAmount: 0,
       legacyHoldUntil: 0,
       legacyUntil: 0,
+      configVersion: 0,
     });
   });
 });

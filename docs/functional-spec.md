@@ -95,11 +95,13 @@ Environment messages name the variable and the entry position. They never echo a
 - **Limit-only change** (same window): counters are kept and the new limit applies at once. Lowering the limit below current usage gives denials until usage decays.
 - **Window change** (`window_seconds` differs): usage is carried over, not reset, so a window change never refunds quota. `/configure` only stores the new configuration. The carry is applied on the client's next `/ratelimit` call, and other clients are not affected.
   Merging is deliberately conservative: carried usage is one amount that takes the latest hold and expiry of its parts. If an operator changes window lengths repeatedly, usage admitted under a short window after a long one is held as long as the older part (at most about twice the longest window involved). A client can therefore be denied longer than any single original schedule would require, but never less long (HLD section 6.3).
-  - The usage counted so far (the sliding-window estimate, plus any usage carried over from earlier changes) becomes a carried-over amount. It counts in full until the old window would have rolled, then decays linearly to zero over the following old window. If the old window had no requests yet, it decays straight from the change to the roll.
+  - The usage counted so far (the sliding-window estimate, plus any usage carried over from earlier changes) becomes a carried-over amount. The whole estimate counts in full until the old window would have rolled, including the part that was still decaying from the previous window. It then decays linearly to zero over the following old window. If the current window had no requests yet, only the previous-window part is carried, and it decays straight from the change to the roll.
+  - Example: the old window is 60 s, `prev` is 100 and `curr` is 1, and the change happens 90% into the window. The estimate is 100 × 0.1 + 1 = 11. It stays at 11 until the roll, 6 s after the change, then decays to zero over the next 60 s. At the roll an unchanged client would be at about 1, because the 100 requests drop out of `prev` at the roll. This client is therefore held about 10 units longer, and its `retry_after` is longer to match. The change never refunds quota, but it is more conservative than an unchanged window with the same traffic.
   - The new window starts empty. New requests count against the new limit together with the carried-over amount.
   - Repeated changes merge into one carried-over amount and keep the later deadline of each part. A short window, a wait and a long window again therefore cannot refund quota.
   - A client with carried-over usage is not idle-evicted until that usage has expired. `retry_after` accounts for it.
   - Carried-over usage can keep a client denied longer than the new window alone would. To give more quota immediately, raise the limit (a limit-only change).
+- **Requests that overlap a change.** A request that read its configuration before a `/configure` call landed is decided once, with that older limit. If the client already has counter state, the request leaves the window and any carried-over usage unchanged, so an older snapshot cannot roll the client back to an earlier window. An allowed request still counts toward the current window.
 - Every successful `/configure` call is logged with the old and new values and the `actor` (section 8). This includes identical re-submissions. Each successful call is counted in `configUpdates`.
 - Changes are held in memory. After a restart each client returns to its seed-file value, with empty counters.
 
@@ -137,6 +139,10 @@ Example with N = 2 and W = 5 s:
 - t = 0 s: a third request is denied with `retry_after` 8. The formula allows the next request at 1.5 W = 7.5 s, and `retry_after` rounds that up.
 
 After a full burst a client waits about 1.5 W. Under sustained overload the service admits roughly N - 1 requests per window. For N = 1 that is about one request every two windows, as described above.
+
+### 5.2 Idle counter sweep
+
+A timer runs every `SWEEP_INTERVAL_MS` (default 30 s, range 10 ms to 1 hour). It removes counter state for clients idle for more than 2×W that have no carried-over usage (section 4). Such state would read as zero on its next use, so removing it does not change any decision. Each tick examines up to 5000 counters and then yields to the event loop. The rest of a full pass runs on later event-loop turns, so a large number of clients does not stall requests. The timer does not keep the process alive. Idle state is removed on the first sweep that finds it past the limit, so it can stay a little longer than 2×W.
 
 ## 6. Errors and fail-closed
 
@@ -190,7 +196,7 @@ Callers must treat any non-`200` response as a denial. That includes `400`, `401
 
 ## 7. HTTP server limits
 
-These values are fixed in the code and cannot be changed with environment variables.
+Except for the shutdown grace period (section 7.1), these values are fixed in the code and cannot be changed with environment variables.
 
 - Request body: at most 1024 bytes.
 - Keep-alive timeout: 5 s. Idle keep-alive connections are closed after this.
@@ -198,6 +204,19 @@ These values are fixed in the code and cannot be changed with environment variab
 - Request timeout: 15 s. The whole request must arrive within this time.
 - Timeout check interval: 1 s. Node's default is 30 s, which would stretch the two timeouts.
 - Maximum connections: 10,000. Connections beyond this are closed by Node.
+
+### 7.1 Shutdown
+
+On `SIGINT` or `SIGTERM` the service shuts down in this order:
+
+1. Stops accepting new connections.
+2. Closes idle keep-alive connections, and keeps closing them as they become idle.
+3. Lets in-flight requests finish for up to `SHUTDOWN_GRACE_MS` (default 5000 ms, integer from 0 to 60000).
+4. Closes any connections still open when the grace period ends, then exits with code 0.
+
+With `SHUTDOWN_GRACE_MS=0`, active connections are closed straight after the listener closes. Shutdown logs `shutting down` and `stopped` at info level, and a `warn` line when the grace period elapsed and the remaining connections were closed. A second `SIGINT` or `SIGTERM` (the same signal again) ends the process at once, without the drain, because the handler is registered with `once`.
+
+Keep `SHUTDOWN_GRACE_MS` below the stop timeout of whatever runs the service. Docker's default is 10 s. The [README](../README.md#docker) sets 5000 ms in `compose.yaml`.
 
 ## 8. Logging
 
@@ -228,7 +247,7 @@ At `LOG_LEVEL=warn` or higher, the info events are not written. That includes co
 - `decisions`: `allowed` and `denied` totals from `/ratelimit`.
 - `errors`: error responses by class: `validation`, `not_found`, `method_not_allowed`, `payload_too_large`, `unsupported_media_type`, `unauthorized`, `client_limit_reached`, `fail_closed` and `internal`. `unauthorized` counts requests to `/configure` or `/metrics` without a valid `X-API-Key`.
 - `configUpdates`: successful `/configure` calls.
-- `evictions`: counter states removed by the idle sweep (idle for more than 2×W, with no carried-over usage left).
+- `evictions`: counter states removed by the idle sweep (section 5.2): idle for more than 2×W, with no carried-over usage left.
 - `latency`: `count`, `p50Ms`, `p95Ms`, `p99Ms` and `maxMs` for handler time (from request receipt to the response being handed to the socket). Percentiles are histogram bucket upper bounds, capped at the largest value seen.
 - `latencyBuckets`: a list of `{leMs, count}` from 0.05 ms to 1000 ms. `leMs` is `null` for the overflow bucket.
 - `activeKeys`: clients that currently hold counter state.

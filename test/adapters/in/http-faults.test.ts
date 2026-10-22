@@ -200,3 +200,35 @@ describe('server options', () => {
     }
   });
 });
+
+describe('oversized chunked body', () => {
+  it('closes the connection after the 413 instead of draining a continuing upload', async () => {
+    const h = await listen({ options: { requestTimeoutMs: 30_000 } });
+    try {
+      const outcome = await new Promise<{ response: string; closedAfterMs: number }>((resolve) => {
+        const startedAt = Date.now();
+        const socket = connect((h.server.address() as AddressInfo).port, '127.0.0.1', () => {
+          socket.write(
+            'POST /api/v1/ratelimit HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n' +
+              'Transfer-Encoding: chunked\r\n\r\n',
+          );
+          const chunk = `${(2048).toString(16)}\r\n${'x'.repeat(2048)}\r\n`;
+          const pump = setInterval(() => {
+            socket.write(chunk);
+          }, 5);
+          let response = '';
+          socket.on('data', (data) => (response += String(data)));
+          socket.on('error', () => undefined);
+          socket.on('close', () => {
+            clearInterval(pump);
+            resolve({ response, closedAfterMs: Date.now() - startedAt });
+          });
+        });
+      });
+      expect(outcome.response).toContain('413');
+      expect(outcome.closedAfterMs).toBeLessThan(5000);
+    } finally {
+      await h.close();
+    }
+  });
+});

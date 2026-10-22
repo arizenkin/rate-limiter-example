@@ -21,9 +21,23 @@ export interface BenchOptions {
   readonly apiKey: string | undefined;
 }
 
-/** The key to use: the one minted for a server the harness spawned, otherwise the configured one. */
-export const resolveApiKey = (options: BenchOptions, mintedKey: string | undefined): string =>
-  (mintedKey ?? options.apiKey) as string;
+/** A server the harness spawned itself, with the admin key it minted for it. */
+export interface SpawnedTarget {
+  readonly url: string;
+  readonly key: string;
+}
+
+/** Where to send load and which admin key to use: the spawned server if any, else `--url` + env. */
+export const resolveTarget = (
+  options: BenchOptions,
+  spawned: SpawnedTarget | undefined,
+): { readonly url: string; readonly apiKey: string } => {
+  if (spawned !== undefined) return { url: spawned.url, apiKey: spawned.key };
+  if (options.url === undefined || options.apiKey === undefined) {
+    throw new UsageError('no target: pass --url together with BENCH_API_KEY');
+  }
+  return { url: options.url, apiKey: options.apiKey };
+};
 
 /** The options as recorded in reports: everything except secrets. */
 export const redactOptions = (options: BenchOptions): Omit<BenchOptions, 'apiKey'> =>

@@ -20,6 +20,8 @@ services:
       # Required: the service refuses to start without it (see README). Left unset here so that
       # `docker compose --profile test run test` works without a key.
       ADMIN_API_KEYS: ${ADMIN_API_KEYS:-}
+      # Keep below Docker's stop timeout (10 s by default, `stop_grace_period`), or SIGKILL wins.
+      SHUTDOWN_GRACE_MS: 5000
     # Mount your own seed file with: -v ./config:/app/config:ro
 
   # `docker compose run --rm test` runs lint + unit tests inside the container.

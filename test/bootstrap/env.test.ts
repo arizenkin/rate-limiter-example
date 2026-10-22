@@ -15,6 +15,7 @@ describe('parseEnv', () => {
       logLevel: 'info',
       sweepIntervalMs: 30_000,
       maxClients: 100_000,
+      shutdownGraceMs: 5000,
       adminKeyHashes: [H1],
     });
   });
@@ -28,6 +29,7 @@ describe('parseEnv', () => {
         LOG_LEVEL: 'warn',
         SWEEP_INTERVAL_MS: '100',
         MAX_CLIENTS: '50',
+        SHUTDOWN_GRACE_MS: '250',
         ADMIN_API_KEYS: ` ${H1} , ${H2},`,
       }),
     ).toEqual({
@@ -37,6 +39,7 @@ describe('parseEnv', () => {
       logLevel: 'warn',
       sweepIntervalMs: 100,
       maxClients: 50,
+      shutdownGraceMs: 250,
       adminKeyHashes: [H1, H2.toLowerCase()],
     });
   });
@@ -50,6 +53,7 @@ describe('parseEnv', () => {
     [{ LOG_LEVEL: 'loud' }, 'LOG_LEVEL must be one of'],
     [{ MAX_CLIENTS: '0' }, 'MAX_CLIENTS must be between 1 and 10000000'],
     [{ SWEEP_INTERVAL_MS: '1' }, 'SWEEP_INTERVAL_MS must be between 10 and 3600000'],
+    [{ SHUTDOWN_GRACE_MS: '60001' }, 'SHUTDOWN_GRACE_MS must be between 0 and 60000'],
   ])('rejects %j', (env, message) => {
     expect(() => parseEnv({ ...required, ...env })).toThrow(StartupError);
     expect(() => parseEnv({ ...required, ...env })).toThrow(message);

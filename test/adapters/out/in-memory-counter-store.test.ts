@@ -52,6 +52,20 @@ describe('InMemoryCounterStore', () => {
     expect(decision.allowed).toBe(false);
   });
 
+  it('ignores an older config snapshot instead of rebasing back to its window', async () => {
+    await store.consume(config());
+    await store.consume(config());
+    await store.consume(config({ windowSeconds: 20, version: 2 }));
+    // A request that read version 1 before the reconfigure is decided with its own limit...
+    expect((await store.consume(config({ requestPerWindow: 5 }))).allowed).toBe(true);
+    // ...but leaves the window and the carried usage of version 2 alone.
+    // eslint-disable-next-line @typescript-eslint/dot-notation -- inspects private state
+    const state = store['states'].get('a');
+    expect(state?.windowMs).toBe(20_000);
+    expect(state?.configVersion).toBe(2);
+    expect(state?.legacyAmount).toBe(2);
+  });
+
   it('lets carried usage decay under the new window', async () => {
     await store.consume(config());
     await store.consume(config());
@@ -143,6 +157,79 @@ describe('InMemoryCounterStore', () => {
       expect(store.activeKeys()).toBe(0);
       store.stopSweeping();
       store.stopSweeping();
+    });
+  });
+
+  describe('sliced sweep', () => {
+    const fill = async (target: InMemoryCounterStore, count: number) => {
+      for (let i = 0; i < count; i++) await target.consume(config({ clientId: `c${i}` }));
+    };
+
+    it('spreads one pass over several slices and evicts everything idle', async () => {
+      const small = new InMemoryCounterStore({
+        clock,
+        sweepSliceSize: 2,
+        onEvict: (n) => evicted.push(n),
+      });
+      await fill(small, 5);
+      clock.advance(20_001);
+      expect(small.sweepSlice()).toBe(2);
+      expect(small.sweepSlice()).toBe(2);
+      expect(small.sweepSlice()).toBe(1);
+      expect(small.activeKeys()).toBe(0);
+      expect(evicted).toEqual([2, 2, 1]);
+    });
+
+    it('treats a slice size below 1 as 1 so a pass always advances', async () => {
+      const zero = new InMemoryCounterStore({ clock, sweepSliceSize: 0 });
+      await fill(zero, 2);
+      clock.advance(20_001);
+      expect(zero.sweep()).toBe(2);
+    });
+
+    it('copes with inserts and deletes between slices', async () => {
+      const small = new InMemoryCounterStore({ clock, sweepSliceSize: 2 });
+      await fill(small, 4);
+      clock.advance(20_001);
+      small.sweepSlice(); // c0, c1 evicted
+      await small.consume(config({ clientId: 'late' })); // fresh, must survive
+      while (small.activeKeys() > 1) small.sweepSlice();
+      small.sweepSlice();
+      expect(small.activeKeys()).toBe(1);
+    });
+
+    it('sweep() restarts from the beginning and completes a full pass', async () => {
+      const small = new InMemoryCounterStore({ clock, sweepSliceSize: 2 });
+      await fill(small, 5);
+      clock.advance(20_001);
+      small.sweepSlice();
+      expect(small.sweep()).toBe(3);
+      expect(small.activeKeys()).toBe(0);
+    });
+
+    it('timer ticks continue a pass on later event-loop turns and can be stopped', async () => {
+      const small = new InMemoryCounterStore({ clock, sweepSliceSize: 1 });
+      await fill(small, 4);
+      clock.advance(20_001);
+      small.startSweeping(5);
+      const deadline = Date.now() + 2000;
+      while (small.activeKeys() > 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(small.activeKeys()).toBe(0);
+      small.stopSweeping();
+    });
+
+    it('stopSweeping cancels a pending continuation', async () => {
+      const small = new InMemoryCounterStore({ clock, sweepSliceSize: 1 });
+      await fill(small, 4);
+      clock.advance(20_001);
+      small.startSweeping(5);
+      await new Promise((resolve) => setTimeout(resolve, 8)); // one tick: 1 slice, more pending
+      small.stopSweeping();
+      const remaining = small.activeKeys();
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(small.activeKeys()).toBe(remaining);
     });
   });
 

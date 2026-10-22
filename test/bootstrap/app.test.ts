@@ -1,4 +1,4 @@
-import { createServer } from 'node:net';
+import { connect, createServer } from 'node:net';
 import { startApp } from '../../src/bootstrap/app';
 import { StartupError } from '../../src/bootstrap/startup-error';
 import type { MetricsReport } from '../../src/application/get-metrics';
@@ -64,6 +64,72 @@ describe('startApp', () => {
     await expect(
       postJson(app.url, '/api/v1/ratelimit', { client_id: 'a', resource: 'r' }),
     ).rejects.toThrow();
+  });
+
+  describe('stop()', () => {
+    const startSlowRequest = (url: string) =>
+      new Promise<{ socket: ReturnType<typeof connect>; response: Promise<string> }>((resolve) => {
+        const socket = connect(Number(new URL(url).port), '127.0.0.1', () => {
+          // Headers promise a body that has not arrived yet, so the request stays in flight.
+          socket.write(
+            'POST /api/v1/ratelimit HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\n' +
+              'Content-Length: 32\r\n\r\n{"client_id":"a",',
+          );
+          const response = new Promise<string>((done) => {
+            let data = '';
+            socket.on('data', (chunk) => (data += String(chunk)));
+            socket.on('close', () => {
+              done(data);
+            });
+          });
+          resolve({ socket, response });
+        });
+      });
+
+    it('lets an in-flight request finish within the grace period', async () => {
+      const app = await startTestApp(
+        [{ client_id: 'a', window_seconds: 60, request_per_window: 3 }],
+        { SHUTDOWN_GRACE_MS: '5000' },
+      );
+      const { socket, response } = await startSlowRequest(app.url);
+      const stopped = app.stop();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      socket.write('"resource":"r"}');
+      expect(await response).toContain('200 OK');
+      await stopped;
+    });
+
+    it('cuts connections that are still active when the grace period ends', async () => {
+      const app = await startTestApp([], { SHUTDOWN_GRACE_MS: '50' });
+      const { response } = await startSlowRequest(app.url);
+      await app.stop();
+      expect(await response).not.toContain('200 OK');
+      expect(app.logger.entries.map((e) => [e.level, e.message])).toEqual([
+        ['info', 'rate limiter listening'],
+        ['info', 'shutting down'],
+        ['warn', 'shutdown grace period elapsed; closing remaining connections'],
+        ['info', 'stopped'],
+      ]);
+    });
+
+    it('can be called twice', async () => {
+      const app = await startTestApp();
+      await app.stop();
+      await expect(app.stop()).resolves.toBeUndefined();
+    });
+
+    it('returns promptly when only idle connections remain', async () => {
+      const app = await startTestApp([], { SHUTDOWN_GRACE_MS: '60000' });
+      await postJson(app.url, '/api/v1/ratelimit', { client_id: 'x', resource: 'r' });
+      const startedAt = Date.now();
+      await app.stop();
+      expect(Date.now() - startedAt).toBeLessThan(2000);
+      expect(app.logger.entries.map((e) => e.message)).toEqual([
+        'rate limiter listening',
+        'shutting down',
+        'stopped',
+      ]);
+    });
   });
 
   it('evicts idle counter state on the configured sweep interval and counts it', async () => {

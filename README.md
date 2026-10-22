@@ -63,8 +63,9 @@ Environment variables (only `ADMIN_API_KEYS` is required; values are plain digit
 - `HOST`: default `0.0.0.0`. Non-empty host name or IP address.
 - `SEED_FILE`: default `config/clients.json`. Path, relative to the working directory.
 - `LOG_LEVEL`: default `info`. One of `fatal`, `error`, `warn`, `info`, `debug`, `trace` or `silent`.
-- `SWEEP_INTERVAL_MS`: default `30000`. Integer from 10 to 3600000. How often idle counter state is swept.
+- `SWEEP_INTERVAL_MS`: default `30000`. Integer from 10 to 3600000. How often the idle counter sweep runs. See [section 5.2](./docs/functional-spec.md#52-idle-counter-sweep).
 - `MAX_CLIENTS`: default `100000`. Integer from 1 to 10000000. Maximum number of configured clients, seed file included. A new client beyond it gets `409` from `/configure`.
+- `SHUTDOWN_GRACE_MS`: default `5000`. Integer from 0 to 60000. On `SIGINT` or `SIGTERM` the service stops accepting connections and lets in-flight requests finish for up to this many milliseconds, then closes the rest. Keep it below the stop timeout of the process manager (Docker's default is 10 s). See [section 7.1](./docs/functional-spec.md#71-shutdown).
 
 Example:
 
@@ -223,7 +224,8 @@ docker compose --profile test run --rm test
 ```
 
 - `compose.yaml` reads `ADMIN_API_KEYS` from your shell, or from a `.env` file next to it. `.env` is gitignored.
-- Without `ADMIN_API_KEYS`, the `app` service exits at startup with `Startup failed: ...` and Compose restarts it. Run `docker compose logs app` to read the message.
+- Without `ADMIN_API_KEYS`, the `app` service exits at startup with `Startup failed: ...`. Its restart policy (`unless-stopped`) restarts it, so it keeps exiting and restarting until the variable is set. Run `docker compose logs app` to read the message. To stop the restart loop, run `docker compose stop app`. Then set the variable and run `docker compose up --build` again.
+- `docker stop` and `docker compose stop` send `SIGTERM`. `compose.yaml` sets `SHUTDOWN_GRACE_MS` to 5000, so the service drains and exits before Docker's default 10-second stop timeout sends `SIGKILL`. `docker run` uses the same default of 5000 ms unless you pass `-e SHUTDOWN_GRACE_MS=<ms>`.
 - The `test` profile does not need the key. It runs `pnpm lint && pnpm test` in the build stage and does not start the `app` service. It does not run `pnpm bench`.
 - `compose.yaml` publishes the API on `127.0.0.1:3000` only. There is no TLS, so do not publish it on a public interface.
 - The app container runs as the non-root `node` user, with a read-only root filesystem, all capabilities dropped and `no-new-privileges` set.

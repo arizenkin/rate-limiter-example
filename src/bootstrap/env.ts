@@ -8,6 +8,8 @@ export interface AppConfig {
   readonly logLevel: string;
   readonly sweepIntervalMs: number;
   readonly maxClients: number;
+  /** How long `stop()` lets in-flight requests finish before closing their connections. */
+  readonly shutdownGraceMs: number;
   /** Lower-case SHA-256 hex digests of the admin API keys. */
   readonly adminKeyHashes: readonly string[];
 }
@@ -73,6 +75,7 @@ const envSchema = z.object({
     .default('info'),
   SWEEP_INTERVAL_MS: integer('SWEEP_INTERVAL_MS', 10, 3_600_000).default(30_000),
   MAX_CLIENTS: integer('MAX_CLIENTS', 1, 10_000_000).default(100_000),
+  SHUTDOWN_GRACE_MS: integer('SHUTDOWN_GRACE_MS', 0, 60_000).default(5000),
 });
 
 /** Parses and validates process environment variables; throws a StartupError naming the variable. */
@@ -90,6 +93,7 @@ export function parseEnv(env: NodeJS.ProcessEnv): AppConfig {
     logLevel: e.LOG_LEVEL,
     sweepIntervalMs: e.SWEEP_INTERVAL_MS,
     maxClients: e.MAX_CLIENTS,
+    shutdownGraceMs: e.SHUTDOWN_GRACE_MS,
     adminKeyHashes: e.ADMIN_API_KEYS,
   };
 }

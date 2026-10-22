@@ -18,6 +18,8 @@ export interface WindowState {
   legacyAmount: number;
   legacyHoldUntil: number;
   legacyUntil: number;
+  /** Version of the newest client config applied to this state; older snapshots never rebase it. */
+  configVersion: number;
 }
 
 export function newWindowState(nowMs: number, windowMs: number): WindowState {
@@ -30,6 +32,7 @@ export function newWindowState(nowMs: number, windowMs: number): WindowState {
     legacyAmount: 0,
     legacyHoldUntil: 0,
     legacyUntil: 0,
+    configVersion: 0,
   };
 }
 

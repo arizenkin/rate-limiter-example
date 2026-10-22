@@ -17,6 +17,8 @@ import { parseEnv } from './env';
 import { loadSeedClients } from './seed-loader';
 import { StartupError } from './startup-error';
 
+const SHUTDOWN_POLL_MS = 50;
+
 export interface RunningApp {
   readonly port: number;
   readonly server: Server;
@@ -87,10 +89,25 @@ export async function startApp(
     stop: () =>
       new Promise<void>((resolve) => {
         counters.stopSweeping();
+        logger.info({ graceMs: config.shutdownGraceMs }, 'shutting down');
+        // close() stops accepting and drops idle connections. Active requests get the grace period
+        // to finish; connections that go idle meanwhile are dropped on the next poll.
+        const poll = setInterval(() => {
+          server.closeIdleConnections();
+        }, SHUTDOWN_POLL_MS);
+        const force = setTimeout(() => {
+          logger.warn(
+            { graceMs: config.shutdownGraceMs },
+            'shutdown grace period elapsed; closing remaining connections',
+          );
+          server.closeAllConnections();
+        }, config.shutdownGraceMs);
         server.close(() => {
+          clearInterval(poll);
+          clearTimeout(force);
+          logger.info({}, 'stopped');
           resolve();
         });
-        server.closeAllConnections();
       }),
   };
 }

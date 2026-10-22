@@ -32,20 +32,20 @@ bench/lib/          pure, unit-tested harness logic; bench/harness/ impure (spaw
 test/               mirrors src/; helpers/ has FakeClock, RecordingLogger, startTestApp (real server on port 0 with a generated admin key; `send`/`postJson` attach it automatically for `/configure` and `/metrics`, pass `apiKey: null` to test unauthenticated calls)
 config/clients.json sample seed file (illustrative clients)
 ```
-Env vars (`src/bootstrap/env.ts`): `ADMIN_API_KEYS` (required, 1–10 comma-separated SHA-256 hex digests; startup fails without it), `PORT` (3000), `HOST` (0.0.0.0), `SEED_FILE` (config/clients.json), `LOG_LEVEL` (info), `SWEEP_INTERVAL_MS` (30000), `MAX_CLIENTS` (100000; `/configure` beyond it → 409, seed file larger than it → startup fails).
+Env vars (`src/bootstrap/env.ts`): `ADMIN_API_KEYS` (required, 1–10 comma-separated SHA-256 hex digests; startup fails without it), `PORT` (3000), `HOST` (0.0.0.0), `SEED_FILE` (config/clients.json), `LOG_LEVEL` (info), `SWEEP_INTERVAL_MS` (30000), `SHUTDOWN_GRACE_MS` (5000; in-flight requests get this long on SIGINT/SIGTERM before connections are cut), `MAX_CLIENTS` (100000; `/configure` beyond it → 409, seed file larger than it → startup fails).
 
 ## Invariants (HLD refs)
 - Hexagonal architecture: core (domain + application) depends on ports only; adapters live at the edge; wiring only in `bootstrap/app.ts`.
 - `CounterStore.consume()` is atomic because its in-memory body is **synchronous** (no `await`, no I/O inside). The port is async; the single `await` is outside the critical section (§5.1, §5.2).
 - No `cluster` / `worker_threads` for request handling (state would split across isolates).
-- Configs are never evicted, so the client count is capped (`MAX_CLIENTS`, enforced in `InMemoryConfigRepository`; `ClientLimitReachedError` is not a fail-closed case); counters are idle-evicted (`> 2×W`) by a synchronous `setInterval(...).unref()` sweep (§5.3).
+- Configs are never evicted, so the client count is capped (`MAX_CLIENTS`, enforced in `InMemoryConfigRepository`; `ClientLimitReachedError` is not a fail-closed case); counters are idle-evicted (`> 2×W`) by a `setInterval(...).unref()` sweep that runs in synchronous slices of 5000 counters (continued via `setImmediate`), so a pass never stalls the loop (§5.3). A config snapshot older than the counter state's `configVersion` never rebases it.
 - Fail-closed on internal failure (§7): the only mapping of unexpected errors to policy is the use-case seam (`ServiceUnavailableError` → 503); the HTTP layer catches anything else as 503 too. Never return 200 on an error.
 - Admin auth (HLD §6.5): `/configure` and `/metrics` require `X-API-Key`; the check happens **before** `Content-Type`/body handling and after 404/405 routing; failures are a uniform 401. Keys exist in the service only as SHA-256 digests compared with `timingSafeEqual` against every digest; never log, echo or put keys (or full digests) in metrics, errors or bench reports — only the 8-char `keyId`/`actor`. `/ratelimit` stays open by design.
 - Reconfiguration never refunds usage: a window change goes through `rebase()` (usage moves into a legacy amount that keeps its old decay schedule; merged changes keep the later deadlines; `retry_after` is found by bisection while it is active; the sweep does not evict state with active legacy usage); a limit-only change keeps counters. Tested with a big→tiny→wait→big sequence. Do not reintroduce counter resets on config changes.
 - Bounded body reader (413, 1 KB), `Content-Type: application/json` check (415), explicit server timeouts with `connectionsCheckingInterval` 1 s, `maxConnections`.
 - One zod schema module (`adapters/in/schemas.ts`) serves both HTTP endpoints and the seed file; messages state field + min/max. Bounds live in `domain/config.ts`.
 - Metrics recording is O(1) and allocation-free on the hot path; route labels are low-cardinality (unknown paths → `UNMATCHED`).
-- No per-decision info logging; log config changes (old→new), fail-closed events, startup errors.
+- No per-decision info logging; log config changes (old→new), fail-closed events, startup errors, and shutdown (start, forced close, done).
 - Tests inject a fake `Clock`; do not use Jest fake timers.
 
 ## Known design notes

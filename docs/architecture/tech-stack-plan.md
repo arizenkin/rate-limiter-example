@@ -28,13 +28,13 @@ This document settles every language, tool and library so implementation can sta
 ### Caching rate limits / configs: none
 Use native `Map<string, …>`.
 - **Config store**: `Map<clientId, Readonly<Config>>`. Replacing the frozen object reference is the HLD §6.1 atomic publish with a version number. Configs must never be evicted (HLD §5.3), which rules out LRU caches like `lru-cache`; they evict by size or recency.
-- **Counter store**: `Map<clientId, CounterState>`. Idle eviction (`> 2×W`, HLD §5.3) runs as a periodic sweep on a `setInterval(...).unref()`.
+- **Counter store**: `Map<clientId, CounterState>`. Idle eviction (`> 2×W`, HLD §5.3) runs as a periodic sweep on a `setInterval(...).unref()`, sliced across event-loop turns.
 
 ### Atomic updates: none
 JavaScript on Node runs on a single thread, and a synchronous function runs to completion without interleaving. So `CounterStore.consume()` is atomic as long as it is **synchronous (no `await`, no I/O inside)**. That gives HLD §5.1's per-key critical section with no locks. Constraints for implementation:
 - **Port shape**: the `consume` port is **async** (so a future Redis adapter fits without changing the core). The in-memory implementation does all its work synchronously and returns a resolved value; the single `await` sits outside the critical section.
 - **No `cluster` / `worker_threads`** for request handling. They would split state across isolates and break correctness. One process scales vertically; the benchmark above suggests 1000 RPS is far below one core's capacity, to be confirmed by load test.
-- **The eviction sweep** also runs synchronously on the event loop, so it cannot race `consume` (satisfies HLD §5.3).
+- **The eviction sweep** runs in synchronous slices of 5000 counters (continued with `setImmediate`), so each slice cannot race `consume` and a large map never stalls the loop (satisfies HLD §5.3).
 
 ### Other built-ins instead of libraries
 - **Monotonic clock**: `performance.now()` (global in Node 24) behind the `Clock` port. Tests inject a fake clock instead of using Jest fake timers.
