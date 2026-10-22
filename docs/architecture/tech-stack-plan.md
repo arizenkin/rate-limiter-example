@@ -1,6 +1,6 @@
 # Rate Limiter — Tech Stack Decision
 
-Status: **Approved v1** (2026-10-21). Companion to [high-level-design.md](./high-level-design.md) (Draft v4), which intentionally selected no tech stack.
+Status: **Approved v1** (2026-10-21); updated for the admin API key, client cap and protected `/metrics` (HLD Draft v5). Companion to [high-level-design.md](./high-level-design.md) (Draft v4), which intentionally selected no tech stack.
 
 ## Context
 This document settles every language, tool and library so implementation can start. For runtime choices the priority is **performance and low memory over developer convenience**. Every version below was checked against the npm registry, Docker Hub or the official nodejs/Release `schedule.json` on 2026-10-21. Benchmarks are third-party and treated as directional only; our own load test is the evidence.
@@ -40,7 +40,8 @@ JavaScript on Node runs on a single thread, and a synchronous function runs to c
 - **Monotonic clock**: `performance.now()` (global in Node 24) behind the `Clock` port. Tests inject a fake clock instead of using Jest fake timers.
 - **JSON**: built-in `JSON.parse` / `JSON.stringify`. zod strips unknown keys, so no `secure-json-parse` is needed.
 - **Config seed file**: JSON (HLD §11), read with `node:fs` and validated by the same zod schema. No YAML library.
-- **Metrics**: behind the HLD Metrics port with an in-memory/no-op adapter, no endpoint. No `prom-client`.
+- **Metrics**: behind the HLD Metrics port with an in-memory adapter, exposed as a JSON `GET /metrics` endpoint protected by the admin API key (HLD §9, §10.1 #17). No `prom-client`.
+- **Admin API key hashing**: `node:crypto` (`createHash('sha256')`, `timingSafeEqual`) behind the `ApiKeyVerifier` port (HLD §6.5). No auth library; `pnpm gen-key` mints keys with `crypto.randomBytes`.
 
 ## Dev tooling
 | Need | Choice | Notes |
@@ -57,8 +58,8 @@ JavaScript on Node runs on a single thread, and a synchronous function runs to c
 ## Container
 - Multi-stage `Dockerfile`:
   - **Build stage** on `node:24.22.0-alpine` (tag verified on Docker Hub): Corepack pnpm, `pnpm install --frozen-lockfile`, `tsc`, `pnpm prune --prod`.
-  - **Runtime stage** on the same base: non-root `node` user, `CMD ["node","dist/main.js"]`, seed config file supplied via volume or `COPY`.
-- Optional `docker compose` with an app service and a test target, so `docker compose run test` runs lint + jest + bench in-container.
+  - **Runtime stage** on the same base: non-root `node` user, `CMD ["node","dist/main.js"]`, seed config file supplied via volume or `COPY`; `ADMIN_API_KEYS` (SHA-256 digests) supplied via the environment. The `HEALTHCHECK` is a plain TCP connect to the listening port, because an HTTP probe of `/metrics` would answer 401 and pollute the unauthorized-attempt metric.
+- Optional `docker compose` with an app service and a test target, so `docker compose --profile test run --rm test` runs lint + jest in-container (the bench is not part of it).
 
 ## Known risks / items to verify at implementation
 1. **TypeScript 7 incompatibility** with lint/test tooling: pinned to 6.0.3; revisit later.
@@ -76,7 +77,7 @@ JavaScript on Node runs on a single thread, and a synchronous function runs to c
     - Clients are seeded or configured before the run, so requests never hit the unknown-client 404 path.
     - Requests are spread across many `client_id`s, plus a separate single-hot-client run to exercise per-key contention (HLD §5.1).
     - Both `allowed: true` and `allowed: false` responses occur (limits are capped at 500 per window).
-    - `POST /api/v1/configure` calls are interleaved during a run to cover config-update-under-load (HLD §9).
+    - `POST /api/v1/configure` calls are interleaved during a run to cover config-update-under-load (HLD §9). The harness sends the admin API key on those calls and on its `/metrics` sampling (it mints an ephemeral key when it spawns the server itself).
 
 ## Sources
 - [nodejs/Release schedule.json](https://github.com/nodejs/Release/blob/main/schedule.json)

@@ -1,6 +1,6 @@
 # Rate Limiter Service — High-Level Architecture & Design
 
-Status: **Draft v4** (incorporates architect review answers; see §10). Design only; no tech stack selected, no code.
+Status: **Draft v5**. v4 (architect review answers, §10) plus decisions taken during implementation: admin API-key authentication for `/configure` and `/metrics`, a client cap, a protected `/metrics` endpoint and no-refund reconfiguration (§10.1 #5, #11, #14, #17, #18). The implementation follows this document; the stack is in [tech-stack-plan](./tech-stack-plan.md).
 Source requirements: [Rate-Limiter-Coding-Exercise](../requirements/Rate-Limiter-Coding-Exercise.md).
 
 Conventions used in this doc:
@@ -25,6 +25,9 @@ Callers ask "may this client make this request now?" (`POST /api/v1/ratelimit`) 
 | State | In-memory only; reset on restart. Known default clients are seeded at startup with a default window/limit | Decision |
 | Unknown clients | Rejected | Decision |
 | Bounds | `window_seconds` 1–300; `request_per_window` 1–500; `client_id`/`resource` ≤ 36 chars | Decision |
+| Auth | `POST /configure` and `GET /metrics` require an admin API key (`X-API-Key`, §6.2); `/ratelimit` stays open | Decision |
+| Client cap | At most `MAX_CLIENTS` configured clients (default 100000); `/configure` beyond it → 409 (§5.3) | Decision |
+| Observability | `GET /metrics` JSON (protected): request/decision/error counts, latency histogram, active keys, evictions, process memory (§9) | Decision |
 | Failure policy | Fail-closed (§7) | Decision |
 | Extensibility | Hexagonal (ports & adapters); a shared-store (e.g. Redis) backend is a supported future evolution but will not be built now | Decision |
 
@@ -42,7 +45,7 @@ The functional surface is tiny; the difficulty is in the following (each is addr
 
 1. **Atomic check-and-consume on a hot key.** Decision + counter update must be one indivisible step, or concurrent requests over-admit.
 2. **Algorithm accuracy vs. memory vs. latency** (§3).
-3. **Key cardinality.** `/ratelimit` rejects unknown clients, but `/configure` can add them, and there is no auth. Per **[Decision]** there is no cap on clients for this solution, so the known-client set is unbounded; this is an accepted risk (§5.3).
+3. **Key cardinality.** `/ratelimit` rejects unknown clients, but `/configure` can add them. `/configure` now requires an admin API key and the number of configured clients is capped (`MAX_CLIENTS`, default 100000), so memory is bounded and only key holders can grow it (§5.3).
 4. **Safe live reconfiguration** while decisions are in flight (§6).
 5. **Time handling.** Window math depends on a clock; wall-clock jumps must not grant or deny incorrectly.
 6. **Failure policy** — what a caller gets when the limiter itself is unhealthy (§7).
@@ -57,6 +60,7 @@ The functional surface is tiny; the difficulty is in the following (each is addr
 - **Known clients**: at startup the known clients are seeded from a **static configuration file** that lists each `client_id` with its own window and limit **[Decision]**. Limits are adjusted per client via `/configure`, which may also add new clients. A `client_id` with no configuration is **rejected** by `/ratelimit`, not defaulted **[Decision]**.
 - **Bounds [Decision]**: `window_seconds` 1–300, `request_per_window` 1–500, `client_id`/`resource` ≤ 36 chars.
 - **`remaining`**: requests still permitted in the current window after this decision (integer, ≥ 0).
+- **Protected routes**: `POST /configure` and `GET /metrics` require a valid admin API key; `POST /ratelimit` is deliberately open because it is the high-volume path used by the protected system's callers. Unknown paths and wrong methods (404/405) are answered before authentication.
 - **`retry_after`**: whole seconds until a retry could succeed; present only when `allowed=false`. Rounded **up** so a client that waits exactly this long is not rejected again for rounding reasons.
 - Denied requests **do not consume** quota (otherwise a client hammering while blocked extends its own lockout). **[Assumption]**
 
@@ -111,7 +115,8 @@ Rationale against *our* requirements:
 ```
 
 ### Ports
-- **Inbound**: `CheckRateLimit(client_id, resource) → Decision`; `ConfigureLimit(client_id, window, limit) → Config`.
+- **Inbound**: `CheckRateLimit(client_id, resource) → Decision`; `ConfigureLimit(client_id, window, limit, actor) → Config`.
+- **Authentication** (driven port `ApiKeyVerifier`): `verify(presented key) → { keyId } | none`. The HTTP adapter calls it for protected routes **before any body is read**; the SHA-256/`timingSafeEqual` implementation is an adapter, so the credential store can later move to an identity provider without touching the core. `keyId` (first 8 hex characters of the key's digest) is non-secret and identifies who made a change in the audit log.
 - **Outbound**
   - `ConfigRepository`: resolve effective config for a key; atomically store a new config version.
   - `CounterStore`: a single **atomic `consume(key, config) → Decision`** operation. This must be one operation, **not** separate get/set, so that (a) the in-memory adapter can guard it with a per-key critical section and (b) a shared-store adapter can implement it as one server-side atomic script/transaction. This is the most important evolvability constraint in the design.
@@ -149,11 +154,11 @@ Timing source: a monotonic clock for elapsed-time math, so wall-clock adjustment
 For any key and any real-time window `W`, admitted requests never exceed `N` by more than the algorithm's documented approximation error, regardless of concurrency. Tests must assert this under parallel load (and the approximation bound explicitly).
 
 ### 5.3 Memory bound and eviction
-- `/ratelimit` for an unknown client creates no state. But `/configure` can add clients, and with no auth anyone who can reach it can add arbitrarily many. Memory is therefore O(known clients) with constant state per client, and **that count has no limit**.
+- `/ratelimit` for an unknown client creates no state. `/configure` can add clients, but only with an admin API key and only up to `MAX_CLIENTS`. Memory is therefore O(known clients) ≤ the cap, with constant state per client (measured at roughly 400 bytes of heap per client in isolation, about 39 MB at 100000; a measurement of the real config repository and counter store, not a claim about process RSS).
 - Two kinds of per-client data differ in what may be evicted:
   - **Counter state** (usage): safe to evict once idle > `2 × W`, since both counters would be zero on next use. Eviction is lossless.
   - **Configuration** (the client's window/limit): *not* safe to evict, because it is the only copy (in-memory only, **[Decision]**); dropping it would turn a known client into an unknown one.
-- **[Decision]** No cap on the number of clients for this solution. **Accepted risk:** an unauthenticated caller can grow memory by creating clients through `/configure`. This is tolerable only because auth is out of scope and there is no production deployment. It must be revisited together with auth. A cap on configured clients (refusing new clients beyond N with a 4xx JSON error) is the natural mitigation, and it fits the `ConfigRepository` port without redesign.
+- **[Decision]** The number of configured clients is capped at `MAX_CLIENTS` (default 100000; the seed file counts toward it and a larger seed file refuses to start). A `/configure` call that would create a client beyond the cap returns **409** with a JSON error and stores nothing; updating an existing client always works. Configs are never evicted, so the cap is the only bound on their number. **Residual risk:** a holder of an admin key can fill the cap, which blocks creation of new legitimate clients until restart; each update also writes one audit log line, so log volume is bounded only by the key holders' behaviour. Both are acceptable for an admin-only endpoint.
 - Eviction of counter state must not race an in-flight consume (remove under the per-key guard, or re-check after acquiring it).
 
 ---
@@ -166,8 +171,9 @@ For any key and any real-time window `W`, admitted requests never exceed `N` by 
 - `configure` must not block or noticeably delay decisions.
 
 ### 6.2 Mechanism
-1. **Validate** **[Decision]**: `window_seconds` integer in 1–300; `request_per_window` integer in 1–500; `client_id` non-empty, ≤ 36 chars. Invalid → **400** with a JSON error body whose message states the field and its min/max (e.g. "window_seconds must be between 1 and 300"); nothing stored. An unknown `client_id` is **created** (upsert), (no client cap, §5.3).
-2. **Build an immutable config value** and atomically publish it to `ConfigRepository` with a monotonically increasing **version** per client.
+1. **Authenticate** **[Decision]**: the request must carry a valid admin API key in `X-API-Key` (§6.5). Missing or wrong → **401**, identical body in both cases, before the body is read; nothing stored.
+2. **Validate** **[Decision]**: `window_seconds` integer in 1–300; `request_per_window` integer in 1–500; `client_id` non-empty, ≤ 36 chars. Invalid → **400** with a JSON error body whose message states the field and its min/max (e.g. "window_seconds must be between 1 and 300"); nothing stored. An unknown `client_id` is **created** (upsert) unless that would exceed the client cap (409, §5.3).
+3. **Build an immutable config value** and atomically publish it to `ConfigRepository` with a monotonically increasing **version** per client; the audit log records the caller's `keyId` (§6.4).
 3. Respond 200 with the stored config.
 4. **No synchronous sweep** of counter state. Counters are reconciled lazily on next access (§6.3). Cost of `configure` is therefore O(1), independent of number of active keys.
 
@@ -176,16 +182,25 @@ For any key and any real-time window `W`, admitted requests never exceed `N` by 
 |---|---|---|---|
 | A. Always reset state | New config starts a fresh window | Simplest, always consistent | A client can be handed a free burst by any config touch; a reconfig-spam path (if config API is reachable by clients) defeats limiting |
 | B. Always preserve state | Reuse counters under the new config | No free burst | Counters from a different `W` are not meaningful (window boundaries/weights differ), so it cannot be applied when `W` changes |
-| **C. Hybrid (chosen)** | **Limit-only change** (`N` changes, `W` same): keep counters, apply new `N` immediately. **Window change** (`W` changes): discard that key's counters on next access | Preserves continuity whenever mathematically valid; resets only when forced | Slightly more logic; raising `W` grants a fresh quota once |
+| **C′. Hybrid, no refund (chosen)** | **Limit-only change** (`N` changes, `W` same): keep counters, apply new `N` immediately. **Window change** (`W` changes): the usage already counted moves into a carried-over ("legacy") amount that keeps its old decay schedule while a fresh window of the new length starts | Preserves continuity whenever mathematically valid; a configuration change, or any sequence of them, never returns quota sooner than the old schedule would have | More state per client (three numbers) and a bisection for `retry_after` while carried usage is active |
 
-**[Decision]** Option C. Mechanically: each state record stores the config version/`W` it was built under; on consume, if `W` differs, treat state as absent (lazy reset). Lowering `N` below current usage simply yields denies until usage decays.
+**[Decision]** Option C′ (v4 chose option C, which reset counters on a window change; that let any configuration touch hand a client a free burst, so it was replaced). Mechanically: each state record stores the `W` it was built under; on consume, if `W` differs, the store takes the usage under the old `W` (the sliding-window estimate plus any usage still carried from earlier changes) and records it as a carried amount that counts in full until the old window would have rolled and then decays linearly over the following old window (usage that comes only from the previous window decays straight away over the rest of the current one, exactly as it would have); merged changes keep the later of each deadline. The new window starts empty, and a decision counts new usage plus the carried amount. Repeatedly toggling `window_seconds`, including long → short → wait → long, therefore never forgives usage sooner than the schedule it was earned under (a shortened window cannot be used to launder usage). Carried state keeps a client's counters from idle eviction until it has expired. **Deliberate conservatism:** carried usage is a single amount with the latest hold and expiry of its parts, so usage admitted under a short window after a change to a longer one is held as long as the older part (at most about 2× the longest window involved). That can deny a client for longer than any one original schedule would, only for operators who flap window lengths; it is never looser, and a test pins it. Lowering `N` below current usage simply yields denies until usage decays. An authorised caller can still *raise* limits; that is what the admin endpoint is for.
 ### 6.4 Side effects summary
 - Takes effect for *new* decisions after publish; in-flight decisions complete under the snapshot they already read (at most one decision-length of staleness).
 - No counter sweep; keys affected are reconciled on next request.
 - Config is in-memory only **[Decision]**: after a restart, all clients return to the seeded default policy and usage counters are empty.
-- Metrics/log entry on every config change (what/old→new) for audit; no caller identity since there is no auth **[Decision]**.
+- Metrics/log entry on every config change (what/old→new) for audit, including the caller's `keyId` (first 8 hex characters of the key's SHA-256 digest; never the key) **[Decision]**.
 
 ---
+
+### 6.5 Admin API key authentication
+
+- **Credential**: a random key (32 bytes, base64url) sent in the `X-API-Key` header. The service never holds plaintext keys: `ADMIN_API_KEYS` contains one to ten comma-separated SHA-256 hex digests. Malformed, duplicate or missing values refuse startup (§11).
+- **Check**: the presented value is hashed and compared with every configured digest using a constant-time comparison (no early exit). Missing, empty, repeated or wrong headers all produce the same **401** body, so a caller learns nothing about which part was wrong.
+- **Order**: route match (404/405) → authentication (401) → `Content-Type` (415) → bounded body (413) → JSON (400) → validation (400) → use case. Unauthenticated callers therefore cannot make the service buffer or parse a body.
+- **Rotation**: add the new digest next to the old one, restart, move callers to the new key, then remove the old digest and restart. Revocation requires a restart in this design (keys are not reloaded at runtime).
+- **Audit**: every configuration change logs the matching key's `keyId`; failed attempts are counted in the `unauthorized` error metric but not logged individually, to avoid unauthenticated log flooding.
+- **Out of scope / known limits**: no throttling of failed attempts (a 256-bit random key cannot be guessed, but floods are cheap to send; the connection cap and timeouts in §7 still apply), no per-key permissions (every key may change every client), no TLS termination (run behind a trusted network boundary or proxy).
 
 ## 7. Failure Policy: Fail-Closed
 
@@ -198,7 +213,9 @@ For any key and any real-time window `W`, admitted requests never exceed `N` by 
 | Class | Behavior | Notes |
 |---|---|---|
 | Malformed request (bad/missing/over-length `client_id`/`resource`) | Client error (4xx) with a descriptive message | Caller bug, not a limiter fault |
+| Missing or invalid admin API key on `/configure` or `/metrics` | **401**, uniform JSON body, `WWW-Authenticate: ApiKey` | Not a fault; checked before the body is read |
 | Unknown `client_id` on `/ratelimit` | **Rejected**: 404 with JSON error body | Policy per **[Decision]**, not a fault |
+| `/configure` would exceed the client cap | **409** with JSON error body | Policy per **[Decision]**, not a fault (§5.3) |
 | Internal error in decision path | **Fail-closed**: **503** with JSON error body; never a 200 | Callers must treat non-200 as deny **[Decision]** |
 | Config/state record cannot be resolved or fails validation | **Fail-closed**; never fall back to "unlimited" | |
 | Resource exhaustion | **Fail-closed** (503) | Client cap (§5.3) is the main guard |
@@ -231,7 +248,7 @@ Known costs of that future (not designed here): a network hop inside the 10 ms b
 ## 9. Non-Functional Design Notes
 - **Throughput 1000+ RPS**: O(1) work per request and no global lock on the hot path. To be proven by load tests; no claim made here.
 - **Latency <10 ms**: the budget covers server-side decision; critical sections must stay trivial, with no I/O inside them in the in-memory adapter.
-- **Observability**: decision counts (allowed/denied), latency histogram, active-key count, evictions, config updates, fail-open events.
+- **Observability**: decision counts (allowed/denied), latency histogram, active-key count, evictions, config updates, fail-closed events, unauthorized attempts. Exposed by `GET /metrics` (JSON, protected by the admin API key). Latency is measured from the point the handler starts until the response is handed to the socket, so it excludes network and queueing time.
 - **Testability**: injectable clock; deterministic algorithm tests; concurrency tests asserting the §5.2 invariant; config-update-during-load tests.
 
 ---
@@ -245,26 +262,29 @@ Known costs of that future (not designed here): a network hop inside the 10 ms b
 | 2 | Seeding | A **static config file** lists each default `client_id` with its own window/limit; loaded at startup. |
 | 3 | Unknown clients | `/ratelimit` rejects them (404, JSON error body). `/configure` **can add** new clients (upsert). |
 | 4 | Scope | Limit is **per client**. `resource` is accepted and validated but has **no effect**. `/configure` body is `client_id`, `window_seconds`, `request_per_window` (no `resource`). |
-| 5 | Reconfiguration | Hybrid (§6.3) |
+| 5 | Reconfiguration | Hybrid with no refund (§6.3, option C′): limit-only change keeps counters; window change carries the current usage into a fresh window |
 | 6 | Accuracy | Sliding window counter's approximation is acceptable |
 | 7 | Bounds | `window_seconds` 1–300, `request_per_window` 1–500; validation errors state field and min/max |
 | 8 | Key length | `client_id` and `resource`: max 36 characters |
 | 9 | Response body | 200 bodies match the spec exactly; no extra fields |
 | 10 | Errors | JSON error bodies; 400 validation, 404 unknown client, **503** for internal service errors (never 200 on a real error) |
-| 11 | Auth | None for now |
+| 11 | Auth | Admin API key (`X-API-Key`) for `/configure` and `/metrics`; keys supplied to the service only as SHA-256 digests in `ADMIN_API_KEYS` (§6.5); `/ratelimit` open |
 | 12 | `retry_after` | Round up to whole seconds |
 | 13 | Failure policy | **Fail-closed**, revisitable once a protected system exists (§7) |
-| 14 | Client cap | None for this solution; accepted risk (§5.3) |
+| 14 | Client cap | `MAX_CLIENTS`, default 100000; beyond it `/configure` returns 409 (§5.3) |
 | 15 | Startup config file | Static file seeds state at startup only. Missing, unparsable or out-of-bounds content → the service **refuses to start** and prints a clear error message (§11). Runtime `/configure` changes are never written back and are lost on restart. |
 | 16 | Error body | `{"error": "<message>"}`; validation errors add the offending field and its min/max. |
+| 17 | Metrics endpoint | `GET /metrics` (JSON) is part of the service and is protected by the admin API key (§9). Supersedes the v4/tech-stack "no endpoint" note |
+| 18 | Key provisioning | Digests in the `ADMIN_API_KEYS` environment variable (several allowed for rotation); keys are generated with `pnpm gen-key`; revocation = remove the digest and restart (§6.5) |
 
 ### 10.2 Remaining open questions
-None blocking. Items to revisit later: failure policy once a protected system exists (§7), client cap and auth (§5.3), and the sliding-window `retry_after` derivation, which is verified by tests (§3.1).
+None blocking. Items to revisit later: failure policy once a protected system exists (§7), the sliding-window `retry_after` derivation, which is verified by tests (§3.1), and the following known limits of the auth design (§6.5): revoking a key requires a restart, failed authentication attempts are counted but not throttled, and every admin key can change every client.
 
 ---
 
 ## 11. Startup Flow
 
-1. Load the static config file. Validate every entry against the same bounds as `/configure` (window 1–300, limit 1–500, `client_id` ≤ 36 chars, no duplicate `client_id`).
-2. On any failure: print a clear error naming the file, the offending entry/field and the violated bound, then exit non-zero. No partial start and no skipping of bad entries (consistent with fail-closed, §7).
-3. On success: publish each entry as version 1 of that client's config, then begin accepting requests.
+1. Load the environment: `ADMIN_API_KEYS` (required: 1–10 distinct SHA-256 hex digests) and the other settings. A missing or malformed value refuses to start.
+2. Load the static config file. Validate every entry against the same bounds as `/configure` (window 1–300, limit 1–500, `client_id` ≤ 36 chars, no duplicate `client_id`) and check the entry count against `MAX_CLIENTS`.
+3. On any failure: print a clear error naming the variable or file, the offending entry/field and the violated bound (never a key or digest), then exit non-zero. No partial start and no skipping of bad entries (consistent with fail-closed, §7).
+4. On success: publish each entry as version 1 of that client's config, then begin accepting requests.
