@@ -103,6 +103,26 @@ Each run writes two gitignored files to `bench/reports/` (or `--out`):
 
 `<start>` is the run's start time in ISO 8601 format, with `:` and `.` replaced by `-`. For example: `2026-01-31T12-00-00-000Z-latency.md`.
 
+## Publishing results
+
+`pnpm bench:publish` turns the newest reports into a committed snapshot in `docs/benchmarks/`. Run it after new benchmark runs:
+
+```bash
+pnpm bench
+pnpm bench:capacity
+pnpm bench:hot
+pnpm bench:publish
+```
+
+For each mode it copies the newest run that has both the `.json` and the `.md` report from `bench/reports/` to `docs/benchmarks/data/` as `latency`, `capacity` and `hot-key`. It then writes three SVG charts to `docs/benchmarks/charts/` and regenerates `docs/benchmarks/README.md`. Modes without a report are listed as not run yet. The command exits with 1 when it finds no reports, so run the benchmarks first.
+
+Flags, both optional:
+
+- `--from <dir>`: report directory. Default `bench/reports`.
+- `--out <dir>`: output directory. Default `docs/benchmarks`.
+
+The reports do not record the machine. The page takes the Node.js version, OS, CPU and memory from the machine that runs `pnpm bench:publish`, so run it on the machine that ran the benchmarks. Do not edit `docs/benchmarks/` by hand; it is overwritten on each publish. See [docs/benchmarks/README.md](./benchmarks/README.md) for the published results.
+
 ## Memory
 
 - The server's RSS and heap used are read from `/metrics` once per second during the measured run.
@@ -121,7 +141,7 @@ Each run writes two gitignored files to `bench/reports/` (or `--out`):
 
 ## Results
 
-This document does not record measured results. Record your own runs in the table below, with the machine, Node version and flags used (or `defaults`). The "Server p99" column is the `/ratelimit` handler p99 from the server (histogram bound), not the whole server.
+This document does not record measured results. The published snapshot of the latest runs is in [docs/benchmarks/README.md](./benchmarks/README.md). Record your own runs in the table below, with the machine, Node version and flags used (or `defaults`). The "Server p99" column is the `/ratelimit` handler p99 from the server (histogram bound), not the whole server.
 
 | Date | Mode     | Machine | Flags | Req/s avg | Client p99 (ms) | Server p99 (ms) | RSS growth (MB) | Result |
 | ---- | -------- | ------- | ----- | --------- | --------------- | --------------- | --------------- | ------ |

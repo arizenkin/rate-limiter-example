@@ -19,6 +19,7 @@
     "bench": "tsx bench/run.ts --mode latency",
     "bench:capacity": "tsx bench/run.ts --mode capacity",
     "bench:hot": "tsx bench/run.ts --mode hot",
+    "bench:publish": "tsx bench/publish.ts",
     "gen-key": "tsx tools/gen-api-key.ts",
     "docs:api": "tsx tools/serve-api-docs.ts"
   },

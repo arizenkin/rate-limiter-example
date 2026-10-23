@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 648" width="760" height="648" role="img" aria-labelledby="t d">
+  <title id="t">Latency percentiles per test</title>
+  <desc id="d">Client p99: Latency: 2 ms; Capacity: 3 ms; Hot key: 3 ms. Server /ratelimit p99: Latency: 0.1 ms; Capacity: 0.05 ms; Hot key: 0.1 ms.</desc>
+  <style>
+    :root {
+      --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+      --grid: #e1e0d9; --axis: #c3c2b7;
+      --seq-1: #86b6ef; --seq-2: #2a78d6; --seq-3: #104281;
+      --series-1: #2a78d6; --series-2: #eb6834;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+        --grid: #2c2c2a; --axis: #383835;
+        --seq-1: #184f95; --seq-2: #3987e5; --seq-3: #86b6ef;
+        --series-1: #3987e5; --series-2: #d95926;
+      }
+    }
+    .bg { fill: var(--surface); }
+    text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; fill: var(--ink-2); font-size: 12px; }
+    .title { fill: var(--ink); font-size: 15px; font-weight: 600; }
+    .sub { fill: var(--ink-2); font-size: 12px; }
+    .label { fill: var(--ink); }
+    .muted { fill: var(--muted); font-size: 11px; }
+    .grid { stroke: var(--grid); stroke-width: 1; }
+    .axis { stroke: var(--axis); stroke-width: 1; }
+    .target { stroke: var(--ink-2); stroke-width: 1.5; }
+    .s1 { fill: var(--seq-1); } .s2 { fill: var(--seq-2); } .s3 { fill: var(--seq-3); }
+    .line-1 { stroke: var(--series-1); fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .line-2 { stroke: var(--series-2); fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .dot-1 { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+    .dot-2 { fill: var(--series-2); stroke: var(--surface); stroke-width: 2; }
+    .range { fill: var(--seq-1); }
+    .avg { fill: var(--seq-3); stroke: var(--surface); stroke-width: 2; }
+  </style>
+  <rect width="760" height="648" rx="8" class="bg"/>
+  <text x="24" y="32" class="title" text-anchor="start">Client-side latency</text>
+  <text x="24" y="50" class="sub" text-anchor="start">Measured by the load generator (1 ms resolution). The line is the pass limit.</text>
+  <rect x="130" y="62" width="10" height="10" rx="2" class="s1"/>
+  <text x="145" y="71" text-anchor="start">p50</text>
+  <rect x="200" y="62" width="10" height="10" rx="2" class="s2"/>
+  <text x="215" y="71" text-anchor="start">p99</text>
+  <rect x="270" y="62" width="10" height="10" rx="2" class="s3"/>
+  <text x="285" y="71" text-anchor="start">p99.9</text>
+  <line x1="130" x2="130" y1="84" y2="282" class="grid"/>
+  <text x="130" y="298" class="muted" text-anchor="middle">0</text>
+  <line x1="303.33" x2="303.33" y1="84" y2="282" class="grid"/>
+  <text x="303.33" y="298" class="muted" text-anchor="middle">5</text>
+  <line x1="476.67" x2="476.67" y1="84" y2="282" class="grid"/>
+  <text x="476.67" y="298" class="muted" text-anchor="middle">10</text>
+  <line x1="650" x2="650" y1="84" y2="282" class="grid"/>
+  <text x="650" y="298" class="muted" text-anchor="middle">15</text>
+  <line x1="130" x2="130" y1="84" y2="282" class="axis"/>
+  <text x="118" y="117" class="label" text-anchor="end">Latency</text>
+  <text x="136" y="101" class="sub" text-anchor="start">0 ms</text>
+  <path d="M130 106h65.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-65.33z" class="s2"/>
+  <text x="205.33" y="117" class="sub" text-anchor="start">2 ms</text>
+  <path d="M130 122h100a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-100z" class="s3"/>
+  <text x="240" y="133" class="sub" text-anchor="start">3 ms</text>
+  <text x="118" y="181" class="label" text-anchor="end">Capacity</text>
+  <path d="M130 154h30.67a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-30.67z" class="s1"/>
+  <text x="170.67" y="165" class="sub" text-anchor="start">1 ms</text>
+  <path d="M130 170h100a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-100z" class="s2"/>
+  <text x="240" y="181" class="sub" text-anchor="start">3 ms</text>
+  <path d="M130 186h204a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-204z" class="s3"/>
+  <text x="344" y="197" class="sub" text-anchor="start">6 ms</text>
+  <text x="118" y="245" class="label" text-anchor="end">Hot key</text>
+  <text x="136" y="229" class="sub" text-anchor="start">0 ms</text>
+  <path d="M130 234h100a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-100z" class="s2"/>
+  <text x="240" y="245" class="sub" text-anchor="start">3 ms</text>
+  <path d="M130 250h342.67a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-342.67z" class="s3"/>
+  <text x="482.67" y="261" class="sub" text-anchor="start">10 ms</text>
+  <line x1="476.67" x2="476.67" y1="84" y2="282" class="target"/>
+  <text x="470.67" y="71" class="sub" text-anchor="end">p99 limit</text>
+  <text x="24" y="352" class="title" text-anchor="start">Server-side handler time, /ratelimit</text>
+  <text x="24" y="370" class="sub" text-anchor="start">From /metrics; each value is a histogram bucket upper bound.</text>
+  <rect x="130" y="382" width="10" height="10" rx="2" class="s1"/>
+  <text x="145" y="391" text-anchor="start">p50</text>
+  <rect x="200" y="382" width="10" height="10" rx="2" class="s2"/>
+  <text x="215" y="391" text-anchor="start">p95</text>
+  <rect x="270" y="382" width="10" height="10" rx="2" class="s3"/>
+  <text x="285" y="391" text-anchor="start">p99</text>
+  <line x1="130" x2="130" y1="404" y2="602" class="grid"/>
+  <text x="130" y="618" class="muted" text-anchor="middle">0</text>
+  <line x1="303.33" x2="303.33" y1="404" y2="602" class="grid"/>
+  <text x="303.33" y="618" class="muted" text-anchor="middle">0.05</text>
+  <line x1="476.67" x2="476.67" y1="404" y2="602" class="grid"/>
+  <text x="476.67" y="618" class="muted" text-anchor="middle">0.1</text>
+  <line x1="650" x2="650" y1="404" y2="602" class="grid"/>
+  <text x="650" y="618" class="muted" text-anchor="middle">0.15</text>
+  <line x1="130" x2="130" y1="404" y2="602" class="axis"/>
+  <text x="118" y="437" class="label" text-anchor="end">Latency</text>
+  <path d="M130 410h169.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-169.33z" class="s1"/>
+  <text x="309.33" y="421" class="sub" text-anchor="start">0.05 ms</text>
+  <path d="M130 426h169.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-169.33z" class="s2"/>
+  <text x="309.33" y="437" class="sub" text-anchor="start">0.05 ms</text>
+  <path d="M130 442h342.67a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-342.67z" class="s3"/>
+  <text x="482.67" y="453" class="sub" text-anchor="start">0.1 ms</text>
+  <text x="118" y="501" class="label" text-anchor="end">Capacity</text>
+  <path d="M130 474h169.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-169.33z" class="s1"/>
+  <text x="309.33" y="485" class="sub" text-anchor="start">0.05 ms</text>
+  <path d="M130 490h169.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-169.33z" class="s2"/>
+  <text x="309.33" y="501" class="sub" text-anchor="start">0.05 ms</text>
+  <path d="M130 506h169.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-169.33z" class="s3"/>
+  <text x="309.33" y="517" class="sub" text-anchor="start">0.05 ms</text>
+  <text x="118" y="565" class="label" text-anchor="end">Hot key</text>
+  <path d="M130 538h169.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-169.33z" class="s1"/>
+  <text x="309.33" y="549" class="sub" text-anchor="start">0.05 ms</text>
+  <path d="M130 554h169.33a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-169.33z" class="s2"/>
+  <text x="309.33" y="565" class="sub" text-anchor="start">0.05 ms</text>
+  <path d="M130 570h342.67a4 4 0 0 1 4 4v6a4 4 0 0 1 -4 4h-342.67z" class="s3"/>
+  <text x="482.67" y="581" class="sub" text-anchor="start">0.1 ms</text>
+
+</svg>

@@ -36,6 +36,7 @@ pnpm build
 - `pnpm gen-key`: generate an admin API key and the `ADMIN_API_KEYS` value for it. See [Authentication](#authentication).
 - `pnpm docs:api`: build a Redoc page for [`docs/api/openapi.yaml`](./docs/api/openapi.yaml) into `dist-docs/` (gitignored), serve it on `http://127.0.0.1:8080/` and open your browser. Flags: `--port <n>` (0 picks a free port), `--no-open`. The viewer script is loaded from a CDN, so it needs internet access.
 - `pnpm bench`, `pnpm bench:capacity`, `pnpm bench:hot`: load tests. See [docs/load-testing.md](./docs/load-testing.md).
+- `pnpm bench:publish`: copy the newest load-test reports from `bench/reports/` into `docs/benchmarks/`, with charts and a summary page. See [docs/benchmarks/README.md](./docs/benchmarks/README.md).
 
 `pnpm lint`, `pnpm test` and `pnpm build` must pass before a change is reviewed.
 
@@ -229,12 +230,13 @@ Flags go after the script name, for example `pnpm bench --duration 3`. To pick t
 pnpm exec tsx bench/run.ts --mode capacity --duration 20
 ```
 
-The modes, flags, pass/fail checks and how to read reports are in [docs/load-testing.md](./docs/load-testing.md).
+The modes, flags, pass/fail checks and how to read reports are in [docs/load-testing.md](./docs/load-testing.md). To publish the newest reports as the committed snapshot in [docs/benchmarks/README.md](./docs/benchmarks/README.md), run `pnpm bench:publish` after the runs.
 
 ## Documentation
 
 - [API reference (OpenAPI 3.1)](./docs/api/openapi.yaml): request and response schemas, status codes and the `X-API-Key` security scheme.
 - [Functional specification](./docs/functional-spec.md): behaviour, authentication, seed file, algorithm, errors, deviations from the exercise and accepted risks.
 - [Load testing](./docs/load-testing.md): harness modes, flags, checks and reports.
+- [Benchmarks](./docs/benchmarks/README.md): published results of the most recent runs, with charts.
 - [High-level design](./docs/architecture/high-level-design.md) and [tech stack](./docs/architecture/tech-stack-plan.md).
 - [Coding exercise](./docs/requirements/Rate-Limiter-Coding-Exercise.md).

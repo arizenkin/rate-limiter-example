@@ -15,6 +15,7 @@ pnpm blocks dependency build scripts; the allowed ones (esbuild, unrs-resolver) 
 - `pnpm lint` (eslint + prettier check) / `pnpm typecheck` / `pnpm test` (jest with coverage) / `pnpm build` — must all pass before review
 - `pnpm test` enforces **100%** statement/branch/function/line coverage over `src/**` and `bench/lib/**` (`src/main.ts` excluded). New code needs tests for every branch; avoid unreachable fallbacks (`?? default`, `?.`) instead of ignoring coverage.
 - `pnpm bench` (latency, pass/fail), `pnpm bench:capacity`, `pnpm bench:hot` — autocannon runs; needed when the hot path changes. Spawns `dist/main.js` (run `pnpm build` first) or use `--url`. Do not run full-length load tests unprompted; use `pnpm bench --duration 3 --warmup 1 --out <tmp dir>` for smoke checks.
+- `pnpm bench:publish` — copies the newest `bench/reports/` run of each mode into `docs/benchmarks/data/`, redraws the SVG charts and regenerates `docs/benchmarks/README.md` (generated: do not edit by hand; re-run after new bench runs).
 - `pnpm dev` — tsx watch; `pnpm start` — `node dist/main.js`. Both need `ADMIN_API_KEYS` (SHA-256 hex digest of an admin key) in the environment; `pnpm gen-key` prints a new key and its digest.
 - `/configure` and `/metrics` need the header `X-API-Key: <key>`. The bench harness mints an ephemeral key when it spawns the server; with `--url` set the `BENCH_API_KEY` environment variable (there is deliberately no `--api-key` flag: it would show up in `ps`).
 
@@ -27,7 +28,7 @@ src/adapters/out/   in-memory config repo + counter store, metrics, clock, pino 
 tools/              gen-api-key.ts (`pnpm gen-key`), serve-api-docs.ts (`pnpm docs:api`: builds `dist-docs/`, serves the OpenAPI page and opens a browser); excluded from coverage
 src/bootstrap/      env.ts, seed-loader.ts, app.ts (composition root; startApp), startup-error.ts
 src/main.ts         3-line entry; keep logic out of it
-bench/lib/          pure, unit-tested harness logic; bench/harness/ impure (spawn, autocannon, sampler); bench/run.ts
+bench/lib/          pure, unit-tested harness logic (incl. publish.ts, charts.ts for `pnpm bench:publish`); bench/harness/ impure (spawn, autocannon, sampler); bench/run.ts, bench/publish.ts
 test/               mirrors src/; helpers/ has FakeClock, RecordingLogger, startTestApp (real server on port 0 with a generated admin key; `send`/`postJson` attach it automatically for `/configure` and `/metrics`, pass `apiKey: null` to test unauthenticated calls)
 config/clients.json sample seed file (illustrative clients)
 ```

@@ -8,3 +8,4 @@ docs/architecture/
 .claude/
 CLAUDE.md
 dist-docs/
+docs/benchmarks/data/
