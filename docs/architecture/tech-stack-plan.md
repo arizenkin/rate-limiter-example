@@ -3,7 +3,7 @@
 Status: **Approved v1** (2026-10-21); updated for the admin API key, client cap and protected `/metrics` (HLD Draft v5). Companion to [high-level-design.md](./high-level-design.md) (Draft v4), which intentionally selected no tech stack.
 
 ## Context
-This document settles every language, tool and library so implementation can start. For runtime choices the priority is **performance and low memory over developer convenience**. Every version below was checked against the npm registry, Docker Hub or the official nodejs/Release `schedule.json` on 2026-10-21. Benchmarks are third-party and treated as directional only; our own load test is the evidence.
+This document settles every language, tool and library so implementation can start. For runtime choices the priority is **performance and low memory over developer convenience**. Every version below was checked against the npm registry or the official nodejs/Release `schedule.json` on 2026-10-21. Benchmarks are third-party and treated as directional only; our own load test is the evidence.
 
 ## Runtime / language
 | Item | Choice | Rationale / verification |
@@ -53,22 +53,16 @@ JavaScript on Node runs on a single thread, and a synchronous function runs to c
 | Format | **prettier 3.9.10 + eslint-config-prettier 10.1.8** | Added: removes formatting debate; eslint stays focused on correctness rules. |
 | Dev run | **tsx 4.23.15** (`pnpm dev` watch) | Dev only; production uses compiled JS. |
 | Types | **`@types/node@24.x`** (not `latest` 26.x) | Avoids typing APIs that aren't in our runtime. |
-| Source control | **git** | Repo not yet initialised: `git init`, `.gitignore`, `.dockerignore` are first steps. |
-
-## Container
-- Multi-stage `Dockerfile`:
-  - **Build stage** on `node:24.22.0-alpine` (tag verified on Docker Hub): Corepack pnpm, `pnpm install --frozen-lockfile`, `tsc`, `pnpm prune --prod`.
-  - **Runtime stage** on the same base: non-root `node` user, `CMD ["node","dist/main.js"]`, seed config file supplied via volume or `COPY`; `ADMIN_API_KEYS` (SHA-256 digests) supplied via the environment. The `HEALTHCHECK` is a plain TCP connect to the listening port, because an HTTP probe of `/metrics` would answer 401 and pollute the unauthorized-attempt metric.
-- Optional `docker compose` with an app service and a test target, so `docker compose --profile test run --rm test` runs lint + jest in-container (the bench is not part of it).
+| Source control | **git** | Repo not yet initialised: `git init` and `.gitignore` are first steps. |
 
 ## Known risks / items to verify at implementation
 1. **TypeScript 7 incompatibility** with lint/test tooling: pinned to 6.0.3; revisit later.
 2. **Zod hot-path cost**: measure in the bench; fallback is hand-written validation behind the same function signature.
-3. **Node 24 is in Maintenance**: upgrading to 26 after 2026-10-28 is a one-line change (engines + base image).
+3. **Node 24 is in Maintenance**: upgrading to 26 after 2026-10-28 is a one-line change (`engines`).
 
 ## Verification (once implementation begins)
 - `corepack enable && pnpm install` succeeds with no peer-dependency warnings for TS/eslint/jest.
-- `pnpm lint`, `pnpm test` and `pnpm build` pass locally and in `docker build`.
+- `pnpm lint`, `pnpm test` and `pnpm build` pass locally.
 - `pnpm bench` runs autocannon against `POST /api/v1/ratelimit` in two modes; record the results in the write-up.
   - **Latency mode** (the pass/fail check): fixed overall rate of about 1000–2000 req/s, a moderate number of connections, **no pipelining**. Passes if p99 latency is < 10 ms. Pipelining and saturation are avoided on purpose: they measure queueing, not decision cost (the fastify benchmark, 100 connections × 10 pipelined, shows ~10 ms even for bare `node:http`).
   - **Capacity mode** (informational): unthrottled, to measure headroom. Only requests/s is reported; it must be ≥ 1000.
@@ -84,4 +78,3 @@ JavaScript on Node runs on a single thread, and a synchronous function runs to c
 - [fastify/benchmarks](https://github.com/fastify/benchmarks)
 - [uNetworking/uWebSockets.js](https://github.com/uNetworking/uWebSockets.js)
 - npm registry metadata (versions, peerDependencies, engines) via `npm view`, 2026-10-21
-- Docker Hub `library/node` tags

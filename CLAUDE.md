@@ -17,7 +17,6 @@ pnpm blocks dependency build scripts; the allowed ones (esbuild, unrs-resolver) 
 - `pnpm bench` (latency, pass/fail), `pnpm bench:capacity`, `pnpm bench:hot` — autocannon runs; needed when the hot path changes. Spawns `dist/main.js` (run `pnpm build` first) or use `--url`. Do not run full-length load tests unprompted; use `pnpm bench --duration 3 --warmup 1 --out <tmp dir>` for smoke checks.
 - `pnpm dev` — tsx watch; `pnpm start` — `node dist/main.js`. Both need `ADMIN_API_KEYS` (SHA-256 hex digest of an admin key) in the environment; `pnpm gen-key` prints a new key and its digest.
 - `/configure` and `/metrics` need the header `X-API-Key: <key>`. The bench harness mints an ephemeral key when it spawns the server; with `--url` set the `BENCH_API_KEY` environment variable (there is deliberately no `--api-key` flag: it would show up in `ps`).
-- Docker: `docker build -t rate-limiter .`, `docker compose up app`, `docker compose --profile test run --rm test`
 
 ## Layout
 ```
@@ -49,7 +48,7 @@ Env vars (`src/bootstrap/env.ts`): `ADMIN_API_KEYS` (required, 1–10 comma-sepa
 - Tests inject a fake `Clock`; do not use Jest fake timers.
 
 ## Known design notes
-- The container HEALTHCHECK is a TCP connect (no unauthenticated HTTP probe, so it does not pollute `errors.unauthorized`). 401/404/405/415 rejections send `Connection: close` because the body is left unread.
+- 401/404/405/415 rejections send `Connection: close` because the body is left unread.
 - `ADMIN_API_KEYS` entries are validated as 64-hex SHA-256 digests; the digest of the empty string is refused, and the verifier never authenticates an absent/empty key.
 - `GET /metrics` is an approved addition (HLD §10.1 #17), protected by the admin key. HLD and tech-stack were deliberately updated for the auth/cap/metrics/no-refund decisions (Draft v5).
 - Key revocation requires a restart; failed authentication is counted (`errors.unauthorized`) but neither logged nor throttled. Documented limits, not bugs.

@@ -216,7 +216,7 @@ On `SIGINT` or `SIGTERM` the service shuts down in this order:
 
 With `SHUTDOWN_GRACE_MS=0`, active connections are closed straight after the listener closes. Shutdown logs `shutting down` and `stopped` at info level, and a `warn` line when the grace period elapsed and the remaining connections were closed. A second `SIGINT` or `SIGTERM` (the same signal again) ends the process at once, without the drain, because the handler is registered with `once`.
 
-Keep `SHUTDOWN_GRACE_MS` below the stop timeout of whatever runs the service. Docker's default is 10 s. The [README](../README.md#docker) sets 5000 ms in `compose.yaml`.
+Keep `SHUTDOWN_GRACE_MS` below the stop timeout of whatever runs the service (a process manager or orchestrator usually sends `SIGKILL` after a fixed delay).
 
 ## 8. Logging
 

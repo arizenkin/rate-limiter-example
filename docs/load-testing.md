@@ -56,7 +56,7 @@ With `--url` the harness uses a server you started yourself. The target's `ADMIN
 
 ```bash
 ADMIN_API_KEYS=<digest> pnpm start                                  # terminal 1
-BENCH_API_KEY=<admin key> pnpm exec tsx bench/run.ts --url http://127.0.0.1:3000 --mode latency   # terminal 2
+BENCH_API_KEY=<admin key> pnpm bench --url http://127.0.0.1:3000                                   # terminal 2
 ```
 
 The target must expose `GET /metrics` and accept the key. Otherwise the latency and hot checks fail with "server metrics unavailable", and the memory section of the report is empty. A key the target does not accept fails earlier: seeding returns HTTP 401 and the run stops with exit code 1.

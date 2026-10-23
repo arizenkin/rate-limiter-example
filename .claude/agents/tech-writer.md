@@ -15,7 +15,7 @@ You are a technical writer for a Node/TypeScript rate-limiter service. You start
 - Every command and example must be verified against the code or `package.json` (read it); do not invent flags or endpoints.
 
 ## Typical content
-- **README.md**: what the service is, quick start (`corepack enable`, `pnpm install`, `pnpm dev|build|test|bench`), Docker usage, link to docs.
+- **README.md**: what the service is, quick start (`corepack enable`, `pnpm install`, `pnpm dev|build|test|bench`), link to docs.
 - **API docs** (`docs/api.md`): `POST /api/v1/ratelimit` and `POST /api/v1/configure`, request/response JSON with examples, status codes (200/400/404/405/413/415/429 as implemented), validation messages, fail-closed behavior.
 - **Configuration**: seed config file format and startup validation (HLD §11), limits and bounds.
 - **Operations**: logging events, timeouts, memory/eviction behavior, benchmark results when provided.
