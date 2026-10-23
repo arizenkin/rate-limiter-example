@@ -240,3 +240,4 @@ The modes, flags, pass/fail checks and how to read reports are in [docs/load-tes
 - [Benchmarks](./docs/benchmarks/README.md): published results of the most recent runs, with charts.
 - [High-level design](./docs/architecture/high-level-design.md) and [tech stack](./docs/architecture/tech-stack-plan.md).
 - [Coding exercise](./docs/requirements/Rate-Limiter-Coding-Exercise.md).
+- [Jeremiah's Comments](./docs/authors_comments.txt) .
