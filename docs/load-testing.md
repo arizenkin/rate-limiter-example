@@ -74,7 +74,7 @@ The harness then runs the same request mix for `--warmup` seconds (default 3) wi
 ## What is measured
 
 - **Client (autocannon):** requests per second (average, minimum, maximum), latency average, p50, p97.5, p99, p99.9 and maximum, errors, timeouts and non-2xx responses.
-- **Server (`GET /metrics`, delta over the measured run):** requests handled, allowed and denied decisions, error responses, handler latency p50, p95 and p99 as histogram bounds, active keys at the end, and evictions.
+- **Server (`GET /metrics`, delta over the measured run):** requests handled, allowed and denied decisions, error responses, active keys at the end, and evictions. These cover the whole server. The latency row is different: handler latency p50, p95 and p99 as histogram bounds for `POST /api/v1/ratelimit` only, taken from `latencyByRoute`. Admin and other routes are not included.
 - **Memory:** RSS and heap used of the server process, read from `/metrics` once per second during the measured run.
 
 ## Pass/fail checks
@@ -84,7 +84,7 @@ Latency and hot modes:
 - No errors and no timeouts (`errors` and `timeouts` are 0).
 - No non-2xx responses. Denials are HTTP 200, so any non-2xx response is a fault.
 - Client p99 latency is below 10 ms.
-- Server p99 handler latency is at most 10 ms, using the histogram bucket bound.
+- Server `/ratelimit` p99 handler latency is at most 10 ms, using the histogram bucket bound (check name `server /ratelimit p99 latency`). The check fails with "no /ratelimit requests were recorded by the server" if the server saw no `/ratelimit` requests during the measured run.
 - Achieved requests per second is at least 90% of `--rate`.
 
 Capacity mode:
@@ -112,7 +112,7 @@ Each run writes two gitignored files to `bench/reports/` (or `--out`):
 
 ## Caveats
 
-- **Server latency is handler time.** It runs from the request reaching the handler to the response being handed to the socket. It excludes network transfer, kernel buffering and any queueing before the handler. The client-side p99 is the authoritative figure for the 10 ms budget.
+- **Server latency is handler time.** It runs from the request reaching the handler to the response being handed to the socket. It excludes network transfer, kernel buffering and any queueing before the handler. The client-side p99 is the authoritative figure for the 10 ms budget. The server figure covers `/ratelimit` only, so admin calls and the `/metrics` sampler do not affect it.
 - autocannon measures latency with 1 ms resolution.
 - Server percentiles are histogram bucket upper bounds, capped at the largest value observed. A reported p99 of 2 ms means the 99th percentile fell in the bucket that ends at 2 ms.
 - Server request totals include the `/metrics` requests made by the sampler (about one per second of the measured run) and the snapshot read just before the run. They are therefore higher than the autocannon total.
@@ -121,7 +121,7 @@ Each run writes two gitignored files to `bench/reports/` (or `--out`):
 
 ## Results
 
-This document does not record measured results. Record your own runs in the table below, with the machine, Node version and flags used (or `defaults`).
+This document does not record measured results. Record your own runs in the table below, with the machine, Node version and flags used (or `defaults`). The "Server p99" column is the `/ratelimit` handler p99 from the server (histogram bound), not the whole server.
 
 | Date | Mode     | Machine | Flags | Req/s avg | Client p99 (ms) | Server p99 (ms) | RSS growth (MB) | Result |
 | ---- | -------- | ------- | ----- | --------- | --------------- | --------------- | --------------- | ------ |

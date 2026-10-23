@@ -17,14 +17,20 @@ export interface LatencySummary {
   readonly maxMs: number;
 }
 
+/** Latency of one route (label), kept apart so `/ratelimit` is not mixed with admin traffic. */
+export interface RouteLatency {
+  readonly latency: LatencySummary;
+  readonly buckets: readonly { readonly leMs: number | null; readonly count: number }[];
+}
+
 export interface MetricsSnapshot {
   readonly requests: Readonly<Record<string, number>>;
   readonly decisions: { readonly allowed: number; readonly denied: number };
   readonly errors: Readonly<Record<string, number>>;
   readonly configUpdates: number;
   readonly evictions: number;
-  readonly latency: LatencySummary;
-  readonly latencyBuckets: readonly { readonly leMs: number | null; readonly count: number }[];
+  /** Keyed like `requests`; only routes that have been seen appear. */
+  readonly latencyByRoute: Readonly<Record<string, RouteLatency>>;
 }
 
 /** Recording must be O(1) and allocation-free: it runs on the request hot path. */

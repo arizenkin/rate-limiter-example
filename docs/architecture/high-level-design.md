@@ -27,7 +27,7 @@ Callers ask "may this client make this request now?" (`POST /api/v1/ratelimit`) 
 | Bounds | `window_seconds` 1–300; `request_per_window` 1–500; `client_id`/`resource` ≤ 36 chars | Decision |
 | Auth | `POST /configure` and `GET /metrics` require an admin API key (`X-API-Key`, §6.2); `/ratelimit` stays open | Decision |
 | Client cap | At most `MAX_CLIENTS` configured clients (default 100000); `/configure` beyond it → 409 (§5.3) | Decision |
-| Observability | `GET /metrics` JSON (protected): request/decision/error counts, latency histogram, active keys, evictions, process memory (§9) | Decision |
+| Observability | `GET /metrics` JSON (protected): request/decision/error counts, per-route latency histograms, active keys, evictions, process memory (§9) | Decision |
 | Failure policy | Fail-closed (§7) | Decision |
 | Extensibility | Hexagonal (ports & adapters); a shared-store (e.g. Redis) backend is a supported future evolution but will not be built now | Decision |
 
@@ -249,7 +249,7 @@ Known costs of that future (not designed here): a network hop inside the 10 ms b
 ## 9. Non-Functional Design Notes
 - **Throughput 1000+ RPS**: O(1) work per request and no global lock on the hot path. To be proven by load tests; no claim made here.
 - **Latency <10 ms**: the budget covers server-side decision; critical sections must stay trivial, with no I/O inside them in the in-memory adapter.
-- **Observability**: decision counts (allowed/denied), latency histogram, active-key count, evictions, config updates, fail-closed events, unauthorized attempts. Exposed by `GET /metrics` (JSON, protected by the admin API key). Latency is measured from the point the handler starts until the response is handed to the socket, so it excludes network and queueing time.
+- **Observability**: decision counts (allowed/denied), per-route latency histograms, active-key count, evictions, config updates, fail-closed events, unauthorized attempts. Exposed by `GET /metrics` (JSON, protected by the admin API key). Latency is measured from the point the handler starts until the response is handed to the socket, so it excludes network and queueing time.
 - **Testability**: injectable clock; deterministic algorithm tests; concurrency tests asserting the §5.2 invariant; config-update-during-load tests.
 
 ---

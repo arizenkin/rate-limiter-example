@@ -73,12 +73,18 @@ export function evaluate(
   });
   checks.push(
     server === undefined
-      ? { name: 'server p99 latency', pass: false, detail: 'server metrics unavailable' }
-      : {
-          name: `server p99 latency <= ${options.p99LimitMs} ms`,
-          pass: server.p99Ms <= options.p99LimitMs,
-          detail: `<= ${fmt(server.p99Ms)} ms (histogram bucket bound)`,
-        },
+      ? { name: 'server /ratelimit p99 latency', pass: false, detail: 'server metrics unavailable' }
+      : server.routeRequests === 0
+        ? {
+            name: 'server /ratelimit p99 latency',
+            pass: false,
+            detail: 'no /ratelimit requests were recorded by the server',
+          }
+        : {
+            name: `server /ratelimit p99 latency <= ${options.p99LimitMs} ms`,
+            pass: server.p99Ms <= options.p99LimitMs,
+            detail: `<= ${fmt(server.p99Ms)} ms (histogram bucket bound)`,
+          },
   );
   const target = options.rate ?? 0;
   checks.push({
@@ -133,7 +139,7 @@ export function renderMarkdown(report: BenchReport): string {
       `| Requests handled | ${server.requests} |`,
       `| Decisions allowed / denied | ${server.allowed} / ${server.denied} |`,
       `| Error responses | ${server.errors} |`,
-      `| Handler latency p50 / p95 / p99 (bucket upper bounds) | ${fmt(server.p50Ms)} / ${fmt(server.p95Ms)} / ${fmt(server.p99Ms)} ms |`,
+      `| /ratelimit handler latency p50 / p95 / p99 (bucket upper bounds) | ${fmt(server.p50Ms)} / ${fmt(server.p95Ms)} / ${fmt(server.p99Ms)} ms |`,
       `| Active keys at end | ${server.activeKeys} |`,
       `| Counter evictions | ${server.evictions} |`,
     );

@@ -4,10 +4,18 @@ import {
   clientIds,
   limitFor,
   pickRequest,
+  RATELIMIT_PATH,
+  RATELIMIT_ROUTE,
   seedBodies,
 } from '../../bench/lib/requests';
+import { resolveRoute } from '../../src/adapters/in/http/router';
 
 describe('bench requests', () => {
+  it('uses the route label the server reports for /ratelimit', () => {
+    const resolution = resolveRoute('POST', RATELIMIT_PATH);
+    expect(resolution.kind === 'match' && resolution.route.label).toBe(RATELIMIT_ROUTE);
+  });
+
   it('uses a low limit in latency mode so denials occur, a high one elsewhere', () => {
     expect(limitFor({ mode: 'latency' })).toBe(10);
     expect(limitFor({ mode: 'capacity' })).toBe(500);

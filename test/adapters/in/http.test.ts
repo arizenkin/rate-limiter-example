@@ -382,9 +382,15 @@ describe('HTTP API', () => {
       expect(m.errors.validation).toBeGreaterThan(0);
       expect(m.errors.not_found).toBeGreaterThan(0);
       expect(m.configUpdates).toBeGreaterThan(0);
-      expect(m.latency.count).toBeGreaterThan(0);
-      expect(m.latency.p99Ms).toBeGreaterThan(0);
-      expect(m.latencyBuckets.at(-1)?.leMs).toBeNull();
+      const ratelimit = m.latencyByRoute['POST /api/v1/ratelimit'];
+      expect(ratelimit?.latency.count).toBeGreaterThan(0);
+      expect(ratelimit?.latency.p99Ms).toBeGreaterThan(0);
+      expect(ratelimit?.buckets.at(-1)?.leMs).toBeNull();
+      expect(Object.keys(m.latencyByRoute)).toEqual(
+        expect.arrayContaining(['POST /api/v1/configure', 'UNMATCHED']),
+      );
+      expect('latency' in m).toBe(false);
+      expect('latencyBuckets' in m).toBe(false);
       expect(m.activeKeys).toBeGreaterThan(0);
       expect(m.process.rssBytes).toBeGreaterThan(0);
       expect(m.process.heapUsedBytes).toBeGreaterThan(0);

@@ -248,8 +248,12 @@ At `LOG_LEVEL=warn` or higher, the info events are not written. That includes co
 - `errors`: error responses by class: `validation`, `not_found`, `method_not_allowed`, `payload_too_large`, `unsupported_media_type`, `unauthorized`, `client_limit_reached`, `fail_closed` and `internal`. `unauthorized` counts requests to `/configure` or `/metrics` without a valid `X-API-Key`.
 - `configUpdates`: successful `/configure` calls.
 - `evictions`: counter states removed by the idle sweep (section 5.2): idle for more than 2×W, with no carried-over usage left.
-- `latency`: `count`, `p50Ms`, `p95Ms`, `p99Ms` and `maxMs` for handler time (from request receipt to the response being handed to the socket). Percentiles are histogram bucket upper bounds, capped at the largest value seen.
-- `latencyBuckets`: a list of `{leMs, count}` from 0.05 ms to 1000 ms. `leMs` is `null` for the overflow bucket.
+- `latencyByRoute`: one entry per route label that has been seen since start, keyed the same way as `requests` (for example `POST /api/v1/ratelimit`, `POST /api/v1/configure`, `GET /metrics`, `UNMATCHED`, `METHOD_NOT_ALLOWED`). Each entry has:
+  - `latency`: `count`, `p50Ms`, `p95Ms`, `p99Ms` and `maxMs` for handler time (from request receipt to the response being handed to the socket). Percentiles are histogram bucket upper bounds, capped at the largest value seen on that route.
+  - `buckets`: a list of `{leMs, count}` from 0.05 ms to 1000 ms. `count` is for that bucket only, not cumulative. `leMs` is `null` for the overflow bucket.
+
+  Every status of a route shares that route's histogram, including `401`, `413` and `503`. Requests that never reach a route are timed under `UNMATCHED` or `METHOD_NOT_ALLOWED`. So a rejected `/configure` call does not affect `POST /api/v1/ratelimit` latency, but a `413` or `415` on `/ratelimit` does count in that route's histogram.
+
 - `activeKeys`: clients that currently hold counter state.
 - `process`: `uptimeSeconds`, `rssBytes` and `heapUsedBytes`.
 

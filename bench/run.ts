@@ -9,7 +9,7 @@ import { summarizeMemory } from './lib/memory';
 import { diffMetrics } from './lib/metrics-diff';
 import { parseOptions, redactOptions, resolveTarget, UsageError, USAGE } from './lib/options';
 import { evaluate, renderMarkdown, type BenchReport } from './lib/report';
-import { buildPlan, seedBodies } from './lib/requests';
+import { buildPlan, RATELIMIT_ROUTE, seedBodies } from './lib/requests';
 
 async function main(): Promise<number> {
   if (process.argv.includes('--help')) {
@@ -43,7 +43,7 @@ async function main(): Promise<number> {
     const memorySamples = sampler.stop();
     const after = await fetchMetrics(url, apiKey);
 
-    const server = before && after ? diffMetrics(before, after) : undefined;
+    const server = before && after ? diffMetrics(before, after, RATELIMIT_ROUTE) : undefined;
     const checks = evaluate(redactOptions(options), client, server);
     const report: BenchReport = {
       startedAt,

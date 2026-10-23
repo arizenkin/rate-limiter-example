@@ -28,6 +28,7 @@ const server = (over: Partial<ServerDelta> = {}): ServerDelta => ({
   errors: 0,
   evictions: 0,
   activeKeys: 100,
+  routeRequests: 3000,
   p50Ms: 0.05,
   p95Ms: 0.1,
   p99Ms: 0.2,
@@ -86,12 +87,23 @@ describe('evaluate', () => {
     );
     expect(byName(slowClient, 'client p99')?.pass).toBe(false);
     const slowServer = evaluate(latency, client(), server({ p99Ms: Infinity }));
-    expect(byName(slowServer, 'server p99')?.pass).toBe(false);
-    expect(byName(slowServer, 'server p99')?.detail).toContain('>1000');
+    expect(byName(slowServer, 'server /ratelimit p99')?.pass).toBe(false);
+    expect(byName(slowServer, 'server /ratelimit p99')?.detail).toContain('>1000');
+  });
+
+  it('fails when the server recorded no /ratelimit requests', () => {
+    const check = byName(
+      evaluate(latency, client(), server({ routeRequests: 0 })),
+      'server /ratelimit p99',
+    );
+    expect(check).toMatchObject({
+      pass: false,
+      detail: 'no /ratelimit requests were recorded by the server',
+    });
   });
 
   it('fails when server metrics are unavailable', () => {
-    const check = byName(evaluate(latency, client(), undefined), 'server p99');
+    const check = byName(evaluate(latency, client(), undefined), 'server /ratelimit p99');
     expect(check).toMatchObject({ pass: false, detail: 'server metrics unavailable' });
   });
 

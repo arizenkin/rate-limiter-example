@@ -102,9 +102,11 @@ paths:
       summary: Operational metrics (additive endpoint, not part of the original specification)
       description: |
         Requires the admin API key. Request counts by route and status, allow/deny totals, error
-        counts by class (including `unauthorized`), server-side handler latency histogram with
-        percentile upper bounds, active keys, evictions and process memory. Latency is measured
-        from request receipt to handing the response to the socket.
+        counts by class (including `unauthorized`), server-side handler latency histograms per
+        route (`latencyByRoute`) with percentile upper bounds, active keys, evictions and process
+        memory. Latency is measured from request receipt to handing the response to the socket.
+        Only routes seen since startup appear. All statuses of a route, including rejections, are
+        counted in that route's histogram.
       security:
         - AdminApiKey: []
       responses:
@@ -190,20 +192,30 @@ components:
           type: [number, 'null']
           description: Inclusive upper bound in milliseconds; null is the overflow (+Inf) bucket.
         count: { type: integer }
+    RouteLatency:
+      type: object
+      required: [latency, buckets]
+      properties:
+        latency:
+          type: object
+          description: Percentiles are histogram bucket upper bounds capped at the observed maximum.
+          required: [count, p50Ms, p95Ms, p99Ms, maxMs]
+          properties:
+            count: { type: integer }
+            p50Ms: { type: number }
+            p95Ms: { type: number }
+            p99Ms: { type: number }
+            maxMs: { type: number }
+        buckets:
+          type: array
+          description: >-
+            Per-bucket counts (not cumulative) from 0.05 ms to 1000 ms, then the overflow bucket
+            with `leMs` null.
+          items: { $ref: '#/components/schemas/LatencyBucket' }
     Metrics:
       type: object
       required:
-        [
-          requests,
-          decisions,
-          errors,
-          configUpdates,
-          evictions,
-          latency,
-          latencyBuckets,
-          activeKeys,
-          process,
-        ]
+        [requests, decisions, errors, configUpdates, evictions, latencyByRoute, activeKeys, process]
       properties:
         requests:
           type: object
@@ -235,18 +247,13 @@ components:
             internal: { type: integer }
         configUpdates: { type: integer }
         evictions: { type: integer, description: Idle counter states removed by the sweep. }
-        latency:
+        latencyByRoute:
           type: object
-          description: Percentiles are histogram bucket upper bounds capped at the observed maximum.
-          properties:
-            count: { type: integer }
-            p50Ms: { type: number }
-            p95Ms: { type: number }
-            p99Ms: { type: number }
-            maxMs: { type: number }
-        latencyBuckets:
-          type: array
-          items: { $ref: '#/components/schemas/LatencyBucket' }
+          description: |
+            Keyed by route label, the same labels as `requests` (for example
+            `POST /api/v1/ratelimit`, `GET /metrics`, `UNMATCHED`, `METHOD_NOT_ALLOWED`). Only routes
+            seen since startup appear.
+          additionalProperties: { $ref: '#/components/schemas/RouteLatency' }
         activeKeys: { type: integer, description: Clients currently holding counter state. }
         process:
           type: object

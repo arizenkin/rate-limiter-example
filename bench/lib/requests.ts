@@ -40,6 +40,8 @@ export interface RequestPlan {
 }
 
 export const RATELIMIT_PATH = '/api/v1/ratelimit';
+/** Route label the server uses in `/metrics` for the rate-limit endpoint. */
+export const RATELIMIT_ROUTE = `POST ${RATELIMIT_PATH}`;
 export const CONFIGURE_PATH = '/api/v1/configure';
 
 export function buildPlan(
