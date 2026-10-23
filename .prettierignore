@@ -1,0 +1,11 @@
+dist/
+coverage/
+node_modules/
+pnpm-lock.yaml
+bench/reports/
+docs/requirements/
+docs/architecture/
+.claude/
+CLAUDE.md
+dist-docs/
+docs/benchmarks/data/

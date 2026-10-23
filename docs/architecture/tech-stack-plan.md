@@ -1,9 +1,9 @@
 # Rate Limiter — Tech Stack Decision
 
-Status: **Approved v1** (2026-10-21). Companion to [high-level-design.md](./high-level-design.md) (Draft v4), which intentionally selected no tech stack.
+Status: **Approved v1** (2026-10-21); updated for the admin API key, client cap and protected `/metrics` (HLD Draft v5). Companion to [high-level-design.md](./high-level-design.md) (Draft v4), which intentionally selected no tech stack.
 
 ## Context
-This document settles every language, tool and library so implementation can start. For runtime choices the priority is **performance and low memory over developer convenience**. Every version below was checked against the npm registry, Docker Hub or the official nodejs/Release `schedule.json` on 2026-10-21. Benchmarks are third-party and treated as directional only; our own load test is the evidence.
+This document settles every language, tool and library so implementation can start. For runtime choices the priority is **performance and low memory over developer convenience**. Every version below was checked against the npm registry or the official nodejs/Release `schedule.json` on 2026-10-21. Benchmarks are third-party and treated as directional only; our own load test is the evidence.
 
 ## Runtime / language
 | Item | Choice | Rationale / verification |
@@ -28,19 +28,20 @@ This document settles every language, tool and library so implementation can sta
 ### Caching rate limits / configs: none
 Use native `Map<string, …>`.
 - **Config store**: `Map<clientId, Readonly<Config>>`. Replacing the frozen object reference is the HLD §6.1 atomic publish with a version number. Configs must never be evicted (HLD §5.3), which rules out LRU caches like `lru-cache`; they evict by size or recency.
-- **Counter store**: `Map<clientId, CounterState>`. Idle eviction (`> 2×W`, HLD §5.3) runs as a periodic sweep on a `setInterval(...).unref()`.
+- **Counter store**: `Map<clientId, CounterState>`. Idle eviction (`> 2×W`, HLD §5.3) runs as a periodic sweep on a `setInterval(...).unref()`, sliced across event-loop turns.
 
 ### Atomic updates: none
 JavaScript on Node runs on a single thread, and a synchronous function runs to completion without interleaving. So `CounterStore.consume()` is atomic as long as it is **synchronous (no `await`, no I/O inside)**. That gives HLD §5.1's per-key critical section with no locks. Constraints for implementation:
 - **Port shape**: the `consume` port is **async** (so a future Redis adapter fits without changing the core). The in-memory implementation does all its work synchronously and returns a resolved value; the single `await` sits outside the critical section.
 - **No `cluster` / `worker_threads`** for request handling. They would split state across isolates and break correctness. One process scales vertically; the benchmark above suggests 1000 RPS is far below one core's capacity, to be confirmed by load test.
-- **The eviction sweep** also runs synchronously on the event loop, so it cannot race `consume` (satisfies HLD §5.3).
+- **The eviction sweep** runs in synchronous slices of 5000 counters (continued with `setImmediate`), so each slice cannot race `consume` and a large map never stalls the loop (satisfies HLD §5.3).
 
 ### Other built-ins instead of libraries
 - **Monotonic clock**: `performance.now()` (global in Node 24) behind the `Clock` port. Tests inject a fake clock instead of using Jest fake timers.
 - **JSON**: built-in `JSON.parse` / `JSON.stringify`. zod strips unknown keys, so no `secure-json-parse` is needed.
 - **Config seed file**: JSON (HLD §11), read with `node:fs` and validated by the same zod schema. No YAML library.
-- **Metrics**: behind the HLD Metrics port with an in-memory/no-op adapter, no endpoint. No `prom-client`.
+- **Metrics**: behind the HLD Metrics port with an in-memory adapter, exposed as a JSON `GET /metrics` endpoint protected by the admin API key (HLD §9, §10.1 #17). No `prom-client`.
+- **Admin API key hashing**: `node:crypto` (`createHash('sha256')`, `timingSafeEqual`) behind the `ApiKeyVerifier` port (HLD §6.5). No auth library; `pnpm gen-key` mints keys with `crypto.randomBytes`.
 
 ## Dev tooling
 | Need | Choice | Notes |
@@ -52,22 +53,16 @@ JavaScript on Node runs on a single thread, and a synchronous function runs to c
 | Format | **prettier 3.9.10 + eslint-config-prettier 10.1.8** | Added: removes formatting debate; eslint stays focused on correctness rules. |
 | Dev run | **tsx 4.23.15** (`pnpm dev` watch) | Dev only; production uses compiled JS. |
 | Types | **`@types/node@24.x`** (not `latest` 26.x) | Avoids typing APIs that aren't in our runtime. |
-| Source control | **git** | Repo not yet initialised: `git init`, `.gitignore`, `.dockerignore` are first steps. |
-
-## Container
-- Multi-stage `Dockerfile`:
-  - **Build stage** on `node:24.22.0-alpine` (tag verified on Docker Hub): Corepack pnpm, `pnpm install --frozen-lockfile`, `tsc`, `pnpm prune --prod`.
-  - **Runtime stage** on the same base: non-root `node` user, `CMD ["node","dist/main.js"]`, seed config file supplied via volume or `COPY`.
-- Optional `docker compose` with an app service and a test target, so `docker compose run test` runs lint + jest + bench in-container.
+| Source control | **git** | Repo not yet initialised: `git init` and `.gitignore` are first steps. |
 
 ## Known risks / items to verify at implementation
 1. **TypeScript 7 incompatibility** with lint/test tooling: pinned to 6.0.3; revisit later.
 2. **Zod hot-path cost**: measure in the bench; fallback is hand-written validation behind the same function signature.
-3. **Node 24 is in Maintenance**: upgrading to 26 after 2026-10-28 is a one-line change (engines + base image).
+3. **Node 24 is in Maintenance**: upgrading to 26 after 2026-10-28 is a one-line change (`engines`).
 
 ## Verification (once implementation begins)
 - `corepack enable && pnpm install` succeeds with no peer-dependency warnings for TS/eslint/jest.
-- `pnpm lint`, `pnpm test` and `pnpm build` pass locally and in `docker build`.
+- `pnpm lint`, `pnpm test` and `pnpm build` pass locally.
 - `pnpm bench` runs autocannon against `POST /api/v1/ratelimit` in two modes; record the results in the write-up.
   - **Latency mode** (the pass/fail check): fixed overall rate of about 1000–2000 req/s, a moderate number of connections, **no pipelining**. Passes if p99 latency is < 10 ms. Pipelining and saturation are avoided on purpose: they measure queueing, not decision cost (the fastify benchmark, 100 connections × 10 pipelined, shows ~10 ms even for bare `node:http`).
   - **Capacity mode** (informational): unthrottled, to measure headroom. Only requests/s is reported; it must be ≥ 1000.
@@ -76,11 +71,10 @@ JavaScript on Node runs on a single thread, and a synchronous function runs to c
     - Clients are seeded or configured before the run, so requests never hit the unknown-client 404 path.
     - Requests are spread across many `client_id`s, plus a separate single-hot-client run to exercise per-key contention (HLD §5.1).
     - Both `allowed: true` and `allowed: false` responses occur (limits are capped at 500 per window).
-    - `POST /api/v1/configure` calls are interleaved during a run to cover config-update-under-load (HLD §9).
+    - `POST /api/v1/configure` calls are interleaved during a run to cover config-update-under-load (HLD §9). The harness sends the admin API key on those calls and on its `/metrics` sampling (it mints an ephemeral key when it spawns the server itself).
 
 ## Sources
 - [nodejs/Release schedule.json](https://github.com/nodejs/Release/blob/main/schedule.json)
 - [fastify/benchmarks](https://github.com/fastify/benchmarks)
 - [uNetworking/uWebSockets.js](https://github.com/uNetworking/uWebSockets.js)
 - npm registry metadata (versions, peerDependencies, engines) via `npm view`, 2026-10-21
-- Docker Hub `library/node` tags

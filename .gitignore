@@ -8,3 +8,5 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 .claude/settings.local.json
+bench/reports/
+dist-docs/

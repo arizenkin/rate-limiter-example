@@ -1,0 +1,7 @@
+{
+  "clients": [
+    { "client_id": "example-client-a", "window_seconds": 60, "request_per_window": 100 },
+    { "client_id": "example-client-b", "window_seconds": 10, "request_per_window": 20 },
+    { "client_id": "example-client-c", "window_seconds": 1, "request_per_window": 5 }
+  ]
+}

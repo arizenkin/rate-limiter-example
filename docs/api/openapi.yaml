@@ -1,0 +1,330 @@
+openapi: 3.1.0
+info:
+  title: Rate Limiter API
+  version: 1.0.0
+  description: |
+    In-memory, per-client rate limiter (sliding window counter). All request and response bodies
+    are JSON. `/ratelimit` always answers 200 for a decision (allowed or denied); any non-200
+    response must be treated by callers as a denial (fail-closed).
+
+    `/configure` differs from the original exercise specification: it takes a `client_id`
+    (see docs/functional-spec.md). `/metrics` is an additive operational endpoint.
+
+    `/configure` and `/metrics` require an admin API key in the `X-API-Key` header. `/ratelimit`
+    is open. A missing or wrong key gets 401 (see docs/functional-spec.md, section 1.1).
+servers:
+  - url: http://localhost:3000
+paths:
+  /api/v1/ratelimit:
+    post:
+      operationId: checkRateLimit
+      summary: Check, and if allowed consume, one request for a client
+      security: []
+      description: |
+        Open to any caller; no API key is needed. Denied requests do not consume quota. `resource`
+        is validated but has no effect on the decision. The request body must not exceed 1024
+        bytes and the `Content-Type` must be `application/json`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RateLimitRequest' }
+            example: { client_id: example-client-a, resource: /orders }
+      responses:
+        '200':
+          description: Decision made.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RateLimitResponse' }
+              examples:
+                allowed:
+                  value: { allowed: true, remaining: 99 }
+                denied:
+                  value: { allowed: false, remaining: 0, retry_after: 4 }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404':
+          description: Unknown `client_id` (not seeded or configured) or unknown route.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example: { error: "client_id 'ghost' is not configured" }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /api/v1/configure:
+    post:
+      operationId: configureLimit
+      summary: Create or update a client's limit (upsert)
+      description: |
+        Requires the admin API key. Publishes a new configuration version for the client.
+
+        A change to the limit only keeps current usage. A change to `window_seconds` never
+        refunds quota: the usage counted so far is carried over and keeps counting against the
+        client on its old schedule, and the new window starts empty. The carried-over usage is
+        applied on the client's next `/ratelimit` call (see docs/functional-spec.md, section 4).
+
+        Changes are held in memory and are lost on restart. Every successful call is logged with
+        the old and new values and the `actor` (the first 8 hex characters of the key's digest).
+      security:
+        - AdminApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfigureRequest' }
+            example: { client_id: example-client-a, window_seconds: 60, request_per_window: 100 }
+      responses:
+        '200':
+          description: The configuration now in effect.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfigureRequest' }
+              example: { client_id: example-client-a, window_seconds: 60, request_per_window: 100 }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '409':
+          description: >-
+            Creating this client would exceed `MAX_CLIENTS` (default 100000). Nothing is stored;
+            updating an existing client still works.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                error: client limit of 100000 reached; existing clients can still be updated
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /metrics:
+    get:
+      operationId: getMetrics
+      summary: Operational metrics (additive endpoint, not part of the original specification)
+      description: |
+        Requires the admin API key. Request counts by route and status, allow/deny totals, error
+        counts by class (including `unauthorized`), server-side handler latency histograms per
+        route (`latencyByRoute`) with percentile upper bounds, active keys, evictions and process
+        memory. Latency is measured from request receipt to handing the response to the socket.
+        Only routes seen since startup appear. All statuses of a route, including rejections, are
+        counted in that route's histogram.
+      security:
+        - AdminApiKey: []
+      responses:
+        '200':
+          description: Current metrics snapshot.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Metrics' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+components:
+  securitySchemes:
+    AdminApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Admin API key, generated with `pnpm gen-key`. The service holds only its SHA-256 digest
+        (the `ADMIN_API_KEYS` environment variable). Required for `/configure` and `/metrics`.
+  schemas:
+    ClientId:
+      type: string
+      minLength: 1
+      maxLength: 36
+    RateLimitRequest:
+      type: object
+      required: [client_id, resource]
+      properties:
+        client_id: { $ref: '#/components/schemas/ClientId' }
+        resource:
+          type: string
+          minLength: 1
+          maxLength: 36
+          description: Accepted and validated; does not affect the decision.
+    RateLimitResponse:
+      type: object
+      required: [allowed, remaining]
+      properties:
+        allowed: { type: boolean }
+        remaining:
+          type: integer
+          minimum: 0
+          description: Requests still permitted in the current window (an estimate; see functional spec).
+        retry_after:
+          type: integer
+          minimum: 1
+          description: Whole seconds (rounded up) until a retry could succeed. Present only when `allowed` is false.
+    ConfigureRequest:
+      type: object
+      required: [client_id, window_seconds, request_per_window]
+      properties:
+        client_id: { $ref: '#/components/schemas/ClientId' }
+        window_seconds: { type: integer, minimum: 1, maximum: 300 }
+        request_per_window:
+          type: integer
+          minimum: 1
+          maximum: 500
+          description: >-
+            Requests allowed per window. The service uses a sliding-window counter, which never
+            admits more than this but is stricter than "N per window" at small values: under
+            sustained traffic it admits about N - 1 requests per window. With 1 that is roughly
+            one request every two windows (a window of 5 s admits at t = 0 and again at about
+            t = 10 s). A client starting from idle can still use the full N at once. See the
+            functional specification (section 5.1) for details.
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, description: Human-readable message. }
+    ValidationError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, example: window_seconds must be between 1 and 300 }
+        field: { type: string, example: window_seconds }
+        min: { type: integer, description: Present for range errors. }
+        max: { type: integer, description: Present for range errors. }
+    LatencyBucket:
+      type: object
+      required: [leMs, count]
+      properties:
+        leMs:
+          type: [number, 'null']
+          description: Inclusive upper bound in milliseconds; null is the overflow (+Inf) bucket.
+        count: { type: integer }
+    RouteLatency:
+      type: object
+      required: [latency, buckets]
+      properties:
+        latency:
+          type: object
+          description: Percentiles are histogram bucket upper bounds capped at the observed maximum.
+          required: [count, p50Ms, p95Ms, p99Ms, maxMs]
+          properties:
+            count: { type: integer }
+            p50Ms: { type: number }
+            p95Ms: { type: number }
+            p99Ms: { type: number }
+            maxMs: { type: number }
+        buckets:
+          type: array
+          description: >-
+            Per-bucket counts (not cumulative) from 0.05 ms to 1000 ms, then the overflow bucket
+            with `leMs` null.
+          items: { $ref: '#/components/schemas/LatencyBucket' }
+    Metrics:
+      type: object
+      required:
+        [requests, decisions, errors, configUpdates, evictions, latencyByRoute, activeKeys, process]
+      properties:
+        requests:
+          type: object
+          description: |
+            Counts keyed by "<route label> <status>", e.g. "POST /api/v1/ratelimit 200". Unmatched
+            paths are counted as UNMATCHED and wrong methods as METHOD_NOT_ALLOWED. Rejected
+            admin calls are counted too, e.g. "POST /api/v1/configure 401".
+          additionalProperties: { type: integer }
+        decisions:
+          type: object
+          required: [allowed, denied]
+          properties:
+            allowed: { type: integer }
+            denied: { type: integer }
+        errors:
+          type: object
+          description: Error responses by class.
+          properties:
+            validation: { type: integer }
+            not_found: { type: integer }
+            method_not_allowed: { type: integer }
+            payload_too_large: { type: integer }
+            unsupported_media_type: { type: integer }
+            unauthorized:
+              type: integer
+              description: Requests without a valid `X-API-Key` on a protected route. Not logged.
+            client_limit_reached: { type: integer }
+            fail_closed: { type: integer }
+            internal: { type: integer }
+        configUpdates: { type: integer }
+        evictions: { type: integer, description: Idle counter states removed by the sweep. }
+        latencyByRoute:
+          type: object
+          description: |
+            Keyed by route label, the same labels as `requests` (for example
+            `POST /api/v1/ratelimit`, `GET /metrics`, `UNMATCHED`, `METHOD_NOT_ALLOWED`). Only routes
+            seen since startup appear.
+          additionalProperties: { $ref: '#/components/schemas/RouteLatency' }
+        activeKeys: { type: integer, description: Clients currently holding counter state. }
+        process:
+          type: object
+          properties:
+            uptimeSeconds: { type: number }
+            rssBytes: { type: integer }
+            heapUsedBytes: { type: integer }
+  responses:
+    ValidationError:
+      description: Missing, mistyped or out-of-bounds field, or a body that is not a JSON object / valid JSON.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+          examples:
+            range:
+              value:
+                {
+                  error: window_seconds must be between 1 and 300,
+                  field: window_seconds,
+                  min: 1,
+                  max: 300,
+                }
+            missing:
+              value: { error: client_id is required, field: client_id }
+            malformed:
+              value: { error: request body must be valid JSON }
+    Unauthorized:
+      description: |
+        The `X-API-Key` header is missing, empty, repeated or wrong. Every case gets this same
+        body. The check runs before the request body is read, and the connection is closed.
+      headers:
+        WWW-Authenticate:
+          description: Authentication scheme expected by the service.
+          schema: { type: string, enum: [ApiKey] }
+        Connection:
+          description: Always `close`.
+          schema: { type: string, enum: [close] }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: missing or invalid API key }
+    MethodNotAllowed:
+      description: Wrong HTTP method for this path.
+      headers:
+        Allow: { schema: { type: string } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: method not allowed; use POST }
+    PayloadTooLarge:
+      description: Request body exceeds 1024 bytes. The connection is closed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: request body must not exceed 1024 bytes }
+    UnsupportedMediaType:
+      description: Content-Type is missing or not `application/json`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: Content-Type must be application/json }
+    Unavailable:
+      description: |
+        Fail-closed: the limiter could not reach a trustworthy decision. Callers must treat this as
+        a denial. Other unexpected internal errors use the same status with the message
+        `internal error; treat the request as denied`.
+      headers:
+        Retry-After:
+          description: Suggested seconds before retrying.
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+          example: { error: rate limiter is unable to make a decision; treat the request as denied }

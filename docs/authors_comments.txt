@@ -1,0 +1,39 @@
+This file purpose to document my thought process and why behind some decisions in my, Jeremiah Bergdale's, own voice. 
+
+AI Discloser: I used claude code to generate every other file in this project. The intitial research I did unassisted, but then I started this project with just requriments doc and a prompt to understand the problem and decide on a few 
+key design decisions. The overivew of that work can be found in the ../architecture/high-level-design.md file. I then planned out tech stack with claude code, the prompt was pretty specific as I already knew the tech stack and tools
+I would use. That conversation is captured in ../architecture/tech-stack-plan.md. The purpose of that was to `one shot` the initial project setup and v1 implemenation. Why did I choose to do the implemenation this way? Because it closely reflects how I work today. 
+
+Key concerns for me. 
+1) the decision algo and its impact on memory and latency
+2) atomic update of counters
+3) focus on fast and low memory
+
+I went into design thinking I would implement Token Bucket pattern for the decision algo. However after a little research I settled on `Sliding window Counter` algo. The main driving reason over others where
+1) good memory profile that scaled N(1) with number client configurations. 
+2) Sliding log window while it has greater accruacy was discounted over memory management concerns. 
+3) Token Bucket was not choosen mostly because the initial bucket size (burst pool) was not defined in the spec. So i felt the Sliding window counter was more true to the spec. 
+
+Biggest trade-off: Not a 100% accurate count algo. It "estimates" if a token should be avalable on a previous count, and current count over the % of remaining window. 
+
+Why Typescript / Nodejs
+
+There where two primiary drivers for Nodejs service. The threading model makes the atomic update of window counters trivial. By design of the lanuguage only 1 thread is executing a given moment, but it still has very high concurrency with event loop architecture. 
+The second reason was how familiar I am with the lanuguage, I wanted to have deep understanding of the lanuguage used in this example. 
+
+If it was requried to squeeze every possbile bit of performance (memory / latency ) out of the solution I'd need to consider other languages RUST, GO, others. And build prototypes in multiple languages to see performance differences. 
+
+Why so few other higher level libraries
+The requirements where simple, and performance needed to be high. So I didn't want to add any weight to the solution with complex frameworks. 
+
+Hexagonal architecture
+I drove implemenation to hexagonal architecture for the long term evolution of the serivce. This solution is a single node solution, it has limited scaling capacity. To scale this service we need to be able to "swap out" the in-memory counter with something like a Redis cluster. 
+
+Why did i add auth to /configure
+Allowing anyone to modify the configurations at any time was a huge security hole, and actualy defeated the rate limiter and quotes could constanly be reset. I had to atleast show an attempt to secure this endpoint. API-key is weak solution. 
+Also, metrics endpoint shouldn't leak data about the service to unauthenticated sources. 
+
+Why do i limit window size, window second duration, number of clients. The core driving decision was to protect the service. And for "fair" usage, not letting one client consume all bandwith of the service. 
+
+Why metrics endpoint? Because I felt it was best way to report how service handled load and met non functional requriments. 
+

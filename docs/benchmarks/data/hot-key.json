@@ -1,0 +1,243 @@
+{
+  "startedAt": "2026-10-23T01:14:19.934Z",
+  "target": "http://127.0.0.1:3000",
+  "options": {
+    "mode": "hot",
+    "url": "http://127.0.0.1:3000",
+    "durationSec": 30,
+    "warmupSec": 3,
+    "connections": 50,
+    "rate": 1500,
+    "clients": 1,
+    "configureEvery": 100,
+    "outDir": "bench/reports",
+    "p99LimitMs": 10,
+    "minRps": 1000
+  },
+  "client": {
+    "totalRequests": 45051,
+    "durationSec": 30.02,
+    "requestsPerSec": {
+      "avg": 1501.7,
+      "min": 1449,
+      "max": 1576
+    },
+    "latencyMs": {
+      "avg": 0.41,
+      "p50": 0,
+      "p97_5": 2,
+      "p99": 3,
+      "p99_9": 10,
+      "max": 11
+    },
+    "errors": 0,
+    "timeouts": 0,
+    "non2xx": 0
+  },
+  "server": {
+    "requests": 45133,
+    "allowed": 8836,
+    "denied": 35777,
+    "errors": 0,
+    "evictions": 0,
+    "activeKeys": 1,
+    "routeRequests": 44613,
+    "p50Ms": 0.05,
+    "p95Ms": 0.05,
+    "p99Ms": 0.1
+  },
+  "memory": {
+    "samples": 31,
+    "startRssMb": 150.68,
+    "peakRssMb": 150.68,
+    "endRssMb": 150.68,
+    "growthRssMb": 0,
+    "peakHeapMb": 16.29,
+    "endHeapMb": 14.71
+  },
+  "memorySamples": [
+    {
+      "tSec": 0,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15438776
+    },
+    {
+      "tSec": 1,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15422320
+    },
+    {
+      "tSec": 2,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15820328
+    },
+    {
+      "tSec": 3,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14562664
+    },
+    {
+      "tSec": 4,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15558824
+    },
+    {
+      "tSec": 5,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15566800
+    },
+    {
+      "tSec": 6,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14741992
+    },
+    {
+      "tSec": 7,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15574968
+    },
+    {
+      "tSec": 8,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15000984
+    },
+    {
+      "tSec": 9,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15763448
+    },
+    {
+      "tSec": 10,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15145448
+    },
+    {
+      "tSec": 11,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14437240
+    },
+    {
+      "tSec": 12,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15238624
+    },
+    {
+      "tSec": 13,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14770200
+    },
+    {
+      "tSec": 14,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15310216
+    },
+    {
+      "tSec": 15,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14675104
+    },
+    {
+      "tSec": 16,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 16069776
+    },
+    {
+      "tSec": 17,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14743776
+    },
+    {
+      "tSec": 18,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15362472
+    },
+    {
+      "tSec": 19,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14784808
+    },
+    {
+      "tSec": 20,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15844776
+    },
+    {
+      "tSec": 21,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 16090632
+    },
+    {
+      "tSec": 22,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15596616
+    },
+    {
+      "tSec": 23,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14840944
+    },
+    {
+      "tSec": 24,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14759816
+    },
+    {
+      "tSec": 25,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15943344
+    },
+    {
+      "tSec": 26,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14945728
+    },
+    {
+      "tSec": 27,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 17084928
+    },
+    {
+      "tSec": 28,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15760784
+    },
+    {
+      "tSec": 29,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 14445920
+    },
+    {
+      "tSec": 30,
+      "rssBytes": 157999104,
+      "heapUsedBytes": 15424560
+    }
+  ],
+  "checks": [
+    {
+      "name": "no errors or timeouts",
+      "pass": true,
+      "detail": "errors=0 timeouts=0"
+    },
+    {
+      "name": "no non-2xx responses",
+      "pass": true,
+      "detail": "non2xx=0"
+    },
+    {
+      "name": "client p99 latency < 10 ms",
+      "pass": true,
+      "detail": "3.00 ms"
+    },
+    {
+      "name": "server /ratelimit p99 latency <= 10 ms",
+      "pass": true,
+      "detail": "<= 0.10 ms (histogram bucket bound)"
+    },
+    {
+      "name": "achieved at least 90% of the target rate",
+      "pass": true,
+      "detail": "1502 of 1500 req/s"
+    }
+  ],
+  "passed": true
+}
