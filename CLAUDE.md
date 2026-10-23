@@ -24,7 +24,7 @@ src/domain/         pure model + sliding-window math (no I/O)
 src/application/    use cases (CheckRateLimit, ConfigureLimit, GetMetrics) and ports/
 src/adapters/in/    schemas.ts (shared zod schemas), http/ (server, router, handlers, body-reader, http-errors)
 src/adapters/out/   in-memory config repo + counter store, metrics, clock, pino logger, runtime info, sha256-api-key-verifier (also `createApiKeyPair`)
-tools/              gen-api-key.ts (`pnpm gen-key`), excluded from coverage
+tools/              gen-api-key.ts (`pnpm gen-key`), serve-api-docs.ts (`pnpm docs:api`: builds `dist-docs/`, serves the OpenAPI page and opens a browser); excluded from coverage
 src/bootstrap/      env.ts, seed-loader.ts, app.ts (composition root; startApp), startup-error.ts
 src/main.ts         3-line entry; keep logic out of it
 bench/lib/          pure, unit-tested harness logic; bench/harness/ impure (spawn, autocannon, sampler); bench/run.ts

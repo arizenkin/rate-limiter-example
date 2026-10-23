@@ -34,6 +34,7 @@ pnpm build
 - `pnpm format`: rewrite files with Prettier.
 - `pnpm test`: Jest with coverage. Fails below 100% for lines, branches, functions or statements.
 - `pnpm gen-key`: generate an admin API key and the `ADMIN_API_KEYS` value for it. See [Authentication](#authentication).
+- `pnpm docs:api`: build a Redoc page for [`docs/api/openapi.yaml`](./docs/api/openapi.yaml) into `dist-docs/` (gitignored), serve it on `http://127.0.0.1:8080/` and open your browser. Flags: `--port <n>` (0 picks a free port), `--no-open`. The viewer script is loaded from a CDN, so it needs internet access.
 - `pnpm bench`, `pnpm bench:capacity`, `pnpm bench:hot`: load tests. See [docs/load-testing.md](./docs/load-testing.md).
 
 `pnpm lint`, `pnpm test` and `pnpm build` must pass before a change is reviewed.
